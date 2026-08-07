@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Hornwatch.Core\Hornwatch.Core.csproj" />
+    <ProjectReference Include="..\Hornwatch.Navigation\Hornwatch.Navigation.csproj" />
+    <ProjectReference Include="..\Hornwatch.Modules.OccultCrescent\Hornwatch.Modules.OccultCrescent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Resources\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+{
+  "Author": "Ellinae",
+  "Name": "Hornwatch",
+  "Punchline": "Veille sur le Croissant Occulte.",
+  "Description": "Alertes de rencontres critiques et de FATEs dans le Croissant Occulte (South Horn, North Horn), jobs fantomes du groupe, progression personnelle et tutoriel du mage bleu fantome. Tape /hornwatch pour ouvrir la fenetre.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "occult crescent",
+    "field operation",
+    "fate",
+    "phantom job"
+  ]
+}

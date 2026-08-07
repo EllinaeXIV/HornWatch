@@ -1,0 +1,17 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="Hornwatch.Core/Hornwatch.Core.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="Hornwatch.Navigation/Hornwatch.Navigation.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="Hornwatch.Modules.OccultCrescent/Hornwatch.Modules.OccultCrescent.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="Hornwatch/Hornwatch.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>

@@ -1,0 +1,85 @@
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility.Raii;
+using Dalamud.Interface.Windowing;
+using Hornwatch.Core;
+using Hornwatch.Core.Localization;
+using Hornwatch.Core.Modules;
+using Hornwatch.Core.Navigation;
+using Hornwatch.Theming;
+using Hornwatch.Windows.Tabs;
+
+namespace Hornwatch.Windows;
+
+public sealed class MainWindow : ThemedWindow, IDisposable
+{
+    private readonly FieldModuleRegistry modules;
+    private readonly ILocalizer localizer;
+    private readonly List<ITab> tabs;
+
+    public MainWindow(
+        Plugin plugin,
+        FieldModuleRegistry modules,
+        ILocalizer localizer,
+        ITravelService travel,
+        ThemeManager theme)
+        : base($"{PluginMeta.Name}{PluginMeta.WindowId("main")}", theme)
+    {
+        this.modules = modules;
+        this.localizer = localizer;
+
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(460, 300),
+            MaximumSize = new Vector2(1400, 1000),
+        };
+        Size = new Vector2(620, 460);
+        SizeCondition = ImGuiCond.FirstUseEver;
+
+        tabs =
+        [
+            new WatchTab(modules, localizer, travel, theme),
+            new PartyTab(modules, localizer, theme),
+            new MyJobsTab(modules, localizer, theme),
+            new GuideTab(modules, localizer, theme),
+        ];
+    }
+
+    public void Dispose() { }
+
+    public override void Draw()
+    {
+        if (!modules.InSupportedZone)
+        {
+            DrawIdleState();
+            return;
+        }
+
+        using var bar = ImRaii.TabBar($"{PluginMeta.InternalName}_tabs");
+        if (!bar.Success)
+        {
+            return;
+        }
+
+        foreach (var tab in tabs)
+        {
+            using var item = ImRaii.TabItem(localizer.Get(tab.TitleKey));
+            if (!item.Success)
+            {
+                continue;
+            }
+
+            tab.Draw();
+        }
+    }
+
+    private void DrawIdleState()
+    {
+        ImGui.Spacing();
+        ImGui.TextColored(Theme.Current.Accent, localizer.Get("zone.unsupported"));
+        ImGui.Spacing();
+        ImGui.TextWrapped(localizer.Get("zone.unsupportedHint"));
+    }
+}
