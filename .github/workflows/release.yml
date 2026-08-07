@@ -69,9 +69,9 @@ jobs:
         shell: pwsh
         run: |
           $path = 'plugin-index/pluginmaster.json'
-          $manifest = Get-Content $path -Raw | ConvertFrom-Json
+          $manifest = @(Get-Content $path -Raw | ConvertFrom-Json)
           ($manifest | Where-Object { $_.InternalName -eq 'Hornwatch' }).AssemblyVersion = "${{ steps.version.outputs.version }}"
-          $manifest | ConvertTo-Json -Depth 10 | Set-Content $path
+          $manifest | ConvertTo-Json -Depth 10 -AsArray | Set-Content $path
 
       - name: Commit pluginmaster.json
         shell: pwsh
