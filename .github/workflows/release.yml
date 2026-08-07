@@ -58,18 +58,27 @@ jobs:
           files: ${{ steps.package.outputs.path }}
           generate_release_notes: true
 
+      - name: Checkout plugin index
+        uses: actions/checkout@v4
+        with:
+          repository: EllinaeXIV/DalamudPlugins
+          path: plugin-index
+          token: ${{ secrets.PLUGINMASTER_TOKEN }}
+
       - name: Update pluginmaster.json
         shell: pwsh
         run: |
-          $manifest = Get-Content pluginmaster.json -Raw | ConvertFrom-Json
-          $manifest[0].AssemblyVersion = "${{ steps.version.outputs.version }}"
-          $manifest | ConvertTo-Json -Depth 10 | Set-Content pluginmaster.json
+          $path = 'plugin-index/pluginmaster.json'
+          $manifest = Get-Content $path -Raw | ConvertFrom-Json
+          ($manifest | Where-Object { $_.InternalName -eq 'Hornwatch' }).AssemblyVersion = "${{ steps.version.outputs.version }}"
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content $path
 
       - name: Commit pluginmaster.json
         shell: pwsh
+        working-directory: plugin-index
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pluginmaster.json
-          git diff --cached --quiet || git commit -m "Update pluginmaster.json for ${{ github.ref_name }}"
+          git diff --cached --quiet || git commit -m "Update Hornwatch to ${{ github.ref_name }}"
           git push origin HEAD:main
