@@ -1,6 +1,7 @@
 {
   "Author": "Ellinae",
   "Name": "Hornwatch",
+  "Punchline": "Tracking Occult Crescent.",
   "Description": "Tracking Occult Crescent. Use /hornwatch to open the plugin. Settings are available from the gear icon in the Plugin Installer.",
   "ApplicableVersion": "any",
   "Tags": [
