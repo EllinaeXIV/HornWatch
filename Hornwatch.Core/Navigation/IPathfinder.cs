@@ -14,6 +14,8 @@ public interface IPathfinder
 
     Vector3 SnapToGround(Vector3 approximate);
 
+    Vector3 GroundLevelAt(Vector3 column);
+
     void MoveTo(Vector3 destination);
 
     void Stop();

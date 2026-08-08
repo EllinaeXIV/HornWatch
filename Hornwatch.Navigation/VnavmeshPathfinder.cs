@@ -10,13 +10,13 @@ namespace Hornwatch.Navigation;
 
 public sealed class VnavmeshPathfinder : IPathfinder
 {
-    private const string VnavmeshInternalName = "vnavmesh";
-
-    private readonly IDalamudPluginInterface pluginInterface;
+    private readonly PluginPresence installed;
     private readonly IPluginLog log;
 
     private const float SnapRadiusHorizontal = 20f;
     private const float SnapRadiusVertical = 500f;
+
+    private const float ProbeAltitude = 1000f;
 
     private readonly ICallGateSubscriber<bool> navIsReady;
     private readonly ICallGateSubscriber<Vector3, bool, bool> pathfindAndMoveTo;
@@ -24,12 +24,13 @@ public sealed class VnavmeshPathfinder : IPathfinder
     private readonly ICallGateSubscriber<bool> pathIsRunning;
     private readonly ICallGateSubscriber<bool> pathfindInProgress;
     private readonly ICallGateSubscriber<Vector3, float, float, Vector3?> meshNearestPoint;
+    private readonly ICallGateSubscriber<Vector3, bool, float, Vector3?> meshPointOnFloor;
 
     private readonly HashSet<string> reported = new();
 
-    public VnavmeshPathfinder(IDalamudPluginInterface pluginInterface, IPluginLog log)
+    public VnavmeshPathfinder(IDalamudPluginInterface pluginInterface, PluginPresence installed, IPluginLog log)
     {
-        this.pluginInterface = pluginInterface;
+        this.installed = installed;
         this.log = log;
 
         navIsReady = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Nav.IsReady");
@@ -38,6 +39,7 @@ public sealed class VnavmeshPathfinder : IPathfinder
         pathIsRunning = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.Path.IsRunning");
         pathfindInProgress = pluginInterface.GetIpcSubscriber<bool>("vnavmesh.SimpleMove.PathfindInProgress");
         meshNearestPoint = pluginInterface.GetIpcSubscriber<Vector3, float, float, Vector3?>("vnavmesh.Query.Mesh.NearestPoint");
+        meshPointOnFloor = pluginInterface.GetIpcSubscriber<Vector3, bool, float, Vector3?>("vnavmesh.Query.Mesh.PointOnFloor");
     }
 
     public Vector3? Destination { get; private set; }
@@ -95,6 +97,28 @@ public sealed class VnavmeshPathfinder : IPathfinder
         return approximate;
     }
 
+    public Vector3 GroundLevelAt(Vector3 column)
+    {
+        if (!IsAvailable)
+        {
+            return column;
+        }
+
+        try
+        {
+            if (meshPointOnFloor.InvokeFunc(column with { Y = ProbeAltitude }, true, SnapRadiusHorizontal) is { } floor)
+            {
+                return floor;
+            }
+        }
+        catch (Exception ex)
+        {
+            Report("Query.Mesh.PointOnFloor", ex);
+        }
+
+        return column;
+    }
+
     public void MoveTo(Vector3 destination)
     {
         if (!IsAvailable)
@@ -128,21 +152,7 @@ public sealed class VnavmeshPathfinder : IPathfinder
         }
     }
 
-    private bool IsInstalled
-    {
-        get
-        {
-            foreach (var plugin in pluginInterface.InstalledPlugins)
-            {
-                if (plugin.InternalName == VnavmeshInternalName && plugin.IsLoaded)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-    }
+    private bool IsInstalled => installed.IsLoaded(PluginPresence.Vnavmesh);
 
     private bool TryNavReady()
     {

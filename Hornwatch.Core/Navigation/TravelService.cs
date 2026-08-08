@@ -31,20 +31,49 @@ public interface ITravelService
 
     TravelPhase Phase { get; }
 
-    void TravelTo(Vector3 destination, string? targetId = null, float? radius = null);
+    Vector3? Destination { get; }
+
+    Vector3? LegDestination { get; }
+
+    void TravelTo(Vector3 destination, string? targetId = null, float? radius = null, bool dismountOnArrival = true);
+
+    void ReturnToCamp();
 
     void Stop();
 
     void Tick();
 }
 
-public sealed class TravelCoordinator : ITravelService
+public sealed class TravelCoordinator(
+    IPathfinder pathfinder,
+    ITeleporter teleporter,
+    IMountController mount,
+    IRecall recall,
+    IConfirmationDialog confirmation,
+    Func<ITeleportNetwork?> network,
+    Func<Vector3?> playerPosition,
+    Func<uint> currentTerritory,
+    Func<string, bool> targetIsActive,
+    Func<bool> teleportEnabled,
+    Func<bool> recallEnabled,
+    Func<bool> travelEnabled,
+    Func<bool> inCombat,
+    IJump jump,
+    IPluginLog log) : ITravelService
 {
     private const float TeleportPointRange = 3.5f;
+
+    private const float AtTeleportPointRange = 25f;
+
+    private const float DirectBoardingRange = 10f;
 
     private const float MaximumWalkToTeleportPoint = 120f;
 
     private const float MountDistanceThreshold = 100f;
+
+    private const float MountForBoardingDistance = 40f;
+
+    private const float SameShardRange = 5f;
 
     private const float DismountDistanceMin = 15f;
 
@@ -59,6 +88,10 @@ public sealed class TravelCoordinator : ITravelService
     private static readonly TimeSpan PhaseSettleTime = TimeSpan.FromSeconds(2);
 
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(1.5);
+
+    private static readonly TimeSpan RecallRetryInterval = TimeSpan.FromSeconds(6);
+
+    private static readonly TimeSpan TeleportRetryInterval = TimeSpan.FromSeconds(8);
 
     private static readonly TimeSpan BoardingTimeout = TimeSpan.FromSeconds(12);
 
@@ -75,21 +108,15 @@ public sealed class TravelCoordinator : ITravelService
 
     private const float DropzoneMaxOffset = 20f;
 
-    private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(10);
+    private const float MinimumArrivalRange = 3f;
 
-    private readonly IPathfinder pathfinder;
-    private readonly ITeleporter teleporter;
-    private readonly IMountController mount;
-    private readonly IRecall recall;
-    private readonly IConfirmationDialog confirmation;
-    private readonly Func<ITeleportNetwork?> network;
-    private readonly Func<Vector3?> playerPosition;
-    private readonly Func<uint> currentTerritory;
-    private readonly Func<string, bool> targetIsActive;
-    private readonly IPluginLog log;
-    private readonly Func<bool> teleportEnabled;
-    private readonly Func<bool> recallEnabled;
-    private readonly Func<bool> travelEnabled;
+    private const int MaximumUnstickAttempts = 6;
+
+    private const float UnstickSidestep = 15f;
+
+    private const float UnstickBackstep = 5f;
+
+    private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(10);
 
     private Vector3 finalDestination;
     private uint startedInTerritory;
@@ -98,6 +125,9 @@ public sealed class TravelCoordinator : ITravelService
     private bool recallAccepted;
     private int boardingAttempts;
     private bool teleportAccepted;
+    private bool boardingWalkTried;
+    private float? targetRadius;
+    private int unstickAttempts;
     private string? targetId;
     private DateTimeOffset lastAttemptAt;
     private Vector3? recallFrom;
@@ -106,53 +136,44 @@ public sealed class TravelCoordinator : ITravelService
     private DateTimeOffset progressAt;
     private readonly Random random = new();
     private float dismountDistance;
+    private bool dismountOnApproach = true;
 
-    public TravelCoordinator(
-        IPathfinder pathfinder,
-        ITeleporter teleporter,
-        IMountController mount,
-        IRecall recall,
-        IConfirmationDialog confirmation,
-        Func<ITeleportNetwork?> network,
-        Func<Vector3?> playerPosition,
-        Func<uint> currentTerritory,
-        Func<string, bool> targetIsActive,
-        Func<bool> teleportEnabled,
-        Func<bool> recallEnabled,
-        Func<bool> travelEnabled,
-        IPluginLog log)
-    {
-        this.log = log;
-        this.pathfinder = pathfinder;
-        this.teleporter = teleporter;
-        this.mount = mount;
-        this.recall = recall;
-        this.confirmation = confirmation;
-        this.network = network;
-        this.playerPosition = playerPosition;
-        this.currentTerritory = currentTerritory;
-        this.targetIsActive = targetIsActive;
-        this.teleportEnabled = teleportEnabled;
-        this.recallEnabled = recallEnabled;
-        this.travelEnabled = travelEnabled;
-    }
+    private Vector3? mountedWalkToShard;
 
     public TravelPhase Phase { get; private set; } = TravelPhase.Idle;
 
     public bool IsEnabled => travelEnabled();
 
+    public Vector3? Destination => Phase == TravelPhase.Idle ? null : finalDestination;
+
+    public Vector3? LegDestination => Phase switch
+    {
+        TravelPhase.Idle => null,
+        TravelPhase.WalkingToTeleport => boardingShard,
+        TravelPhase.Walking => pathfinder.Destination,
+        _ => null,
+    };
+
     public bool IsAvailable => pathfinder.IsAvailable;
 
     public string? UnavailableReasonKey => pathfinder.UnavailableReasonKey;
 
-    public void TravelTo(Vector3 destination, string? targetId = null, float? radius = null)
+    public void TravelTo(
+        Vector3 destination, string? targetId = null, float? radius = null, bool dismountOnArrival = true)
     {
         if (!IsAvailable)
         {
             return;
         }
 
+        Stop();
+
         this.targetId = targetId;
+        boardingWalkTried = false;
+        targetRadius = radius;
+        unstickAttempts = 0;
+        mountedWalkToShard = null;
+        dismountOnApproach = dismountOnArrival;
 
         finalDestination = pathfinder.SnapToGround(Dropzone(destination, radius));
         startedInTerritory = currentTerritory();
@@ -165,6 +186,21 @@ public sealed class TravelCoordinator : ITravelService
         }
 
         BeginBoarding();
+    }
+
+    public void ReturnToCamp()
+    {
+        if (!IsAvailable || !recallEnabled())
+        {
+            return;
+        }
+
+        Stop();
+
+        startedInTerritory = currentTerritory();
+        recallAccepted = false;
+        recallFrom = playerPosition();
+        EnterPhase(TravelPhase.Withdrawing);
     }
 
     public void Tick()
@@ -271,13 +307,24 @@ public sealed class TravelCoordinator : ITravelService
                     return;
                 }
 
+                if (!Settled)
+                {
+                    return;
+                }
+
                 if (Elapsed > BoardingTimeout)
                 {
+                    if (!boardingWalkTried && boardingShard is { } refusedShard)
+                    {
+                        BeginWalkToShard(refusedShard);
+                        return;
+                    }
+
                     GiveUpOnTeleport();
                     return;
                 }
 
-                if (DueForRetry)
+                if (DateTimeOffset.UtcNow - lastAttemptAt > TeleportRetryInterval)
                 {
                     BeginTeleport();
                 }
@@ -287,7 +334,7 @@ public sealed class TravelCoordinator : ITravelService
             case TravelPhase.Mounting:
                 if (mount.IsMounted || Elapsed > MountTimeout)
                 {
-                    StartWalking();
+                    ResumeAfterMounting();
                     return;
                 }
 
@@ -295,14 +342,27 @@ public sealed class TravelCoordinator : ITravelService
                 return;
 
             case TravelPhase.Walking:
-                if ((Settled && !pathfinder.IsMoving) || IsStalled())
+                if (EngagedAtDestination())
                 {
+                    log.Information("[travel] engaged at the destination - the route is done.");
                     pathfinder.Stop();
                     Phase = TravelPhase.Idle;
                     return;
                 }
 
-                if (mount.IsMounted && RemainingDistance() <= dismountDistance)
+                if ((Settled && !pathfinder.IsMoving) || IsStalled())
+                {
+                    if (RemainingDistance() > ArrivalRange && TryUnstick())
+                    {
+                        return;
+                    }
+
+                    pathfinder.Stop();
+                    Phase = TravelPhase.Idle;
+                    return;
+                }
+
+                if (dismountOnApproach && mount.IsMounted && RemainingDistance() <= dismountDistance)
                 {
                     mount.Dismount();
                 }
@@ -316,6 +376,7 @@ public sealed class TravelCoordinator : ITravelService
         teleporter.Abort();
         pathfinder.Stop();
         targetId = null;
+        mountedWalkToShard = null;
         Phase = TravelPhase.Idle;
     }
 
@@ -344,6 +405,11 @@ public sealed class TravelCoordinator : ITravelService
             return null;
         }
 
+        if (NearestShardWithinWalk() is { } boardable && Horizontal(boardable, nearest.Position) < SameShardRange)
+        {
+            return null;
+        }
+
         return nearest.PlaceNameId;
     }
 
@@ -353,15 +419,14 @@ public sealed class TravelCoordinator : ITravelService
 
         if (boardingShard is { } shard)
         {
-            if (Horizontal(playerPosition() ?? shard, shard) <= TeleportPointRange)
+            if (Horizontal(playerPosition() ?? shard, shard) <= DirectBoardingRange)
             {
+                boardingWalkTried = false;
                 BeginTeleport();
                 return;
             }
 
-            boardingAttempts = 0;
-            pathfinder.MoveTo(BoardingDestination(shard));
-            EnterPhase(TravelPhase.WalkingToTeleport);
+            BeginWalkToShard(shard);
             return;
         }
 
@@ -376,6 +441,92 @@ public sealed class TravelCoordinator : ITravelService
         BeginMounting();
     }
 
+    private bool EngagedAtDestination() =>
+        inCombat() && RemainingDistance() <= ArrivalRange;
+
+    private float ArrivalRange => MathF.Max(targetRadius ?? DropzoneMaxOffset, MinimumArrivalRange);
+
+    private bool TryUnstick()
+    {
+        if (unstickAttempts >= MaximumUnstickAttempts)
+        {
+            log.Information($"[travel] still stuck after {unstickAttempts} attempts - abandoning the route.");
+            return false;
+        }
+
+        unstickAttempts++;
+        progressFrom = null;
+        phaseStartedAt = DateTimeOffset.UtcNow;
+        jump.Jump();
+
+        if (unstickAttempts % 2 == 1 && SidestepTarget() is { } escape)
+        {
+            log.Information($"[travel] stuck - stepping aside (attempt {unstickAttempts}).");
+            pathfinder.MoveTo(escape);
+            return true;
+        }
+
+        log.Information($"[travel] stuck - re-routing to the destination (attempt {unstickAttempts}).");
+        pathfinder.MoveTo(finalDestination);
+        return true;
+    }
+
+    private Vector3? SidestepTarget()
+    {
+        if (playerPosition() is not { } here)
+        {
+            return null;
+        }
+
+        var toward = new Vector3(finalDestination.X - here.X, 0f, finalDestination.Z - here.Z);
+        var length = toward.Length();
+        if (length < 0.01f)
+        {
+            return null;
+        }
+
+        var forward = toward / length;
+        var side = unstickAttempts / 2 % 2 == 0
+            ? new Vector3(-forward.Z, 0f, forward.X)
+            : new Vector3(forward.Z, 0f, -forward.X);
+
+        var escape = here + (side * UnstickSidestep) - (forward * UnstickBackstep);
+        return pathfinder.SnapToGround(escape with { Y = here.Y });
+    }
+
+    private void BeginWalkToShard(Vector3 shard)
+    {
+        boardingWalkTried = true;
+        boardingAttempts = 0;
+
+        if (mount.IsEnabled && !mount.IsMounted && !inCombat() && DistanceTo(shard) >= MountForBoardingDistance)
+        {
+            mountedWalkToShard = shard;
+            EnterPhase(TravelPhase.Mounting);
+            return;
+        }
+
+        WalkToShard(shard);
+    }
+
+    private void WalkToShard(Vector3 shard)
+    {
+        mountedWalkToShard = null;
+        pathfinder.MoveTo(BoardingDestination(shard));
+        EnterPhase(TravelPhase.WalkingToTeleport);
+    }
+
+    private void ResumeAfterMounting()
+    {
+        if (mountedWalkToShard is { } shard)
+        {
+            WalkToShard(shard);
+            return;
+        }
+
+        StartWalking();
+    }
+
     private void BeginTeleport()
     {
         if (Phase != TravelPhase.Teleporting)
@@ -383,6 +534,8 @@ public sealed class TravelCoordinator : ITravelService
             teleportAccepted = false;
             EnterPhase(TravelPhase.Teleporting);
         }
+
+        mount.Dismount();
 
         lastAttemptAt = DateTimeOffset.UtcNow;
 
@@ -411,12 +564,27 @@ public sealed class TravelCoordinator : ITravelService
 
     private void TryRecallNow()
     {
-        if (!DueForRetry)
+        if (confirmation.IsAwaitingAnswer)
+        {
+            recallAccepted = true;
+            lastAttemptAt = DateTimeOffset.UtcNow;
+            return;
+        }
+
+        if (recall.IsBusy)
+        {
+            recallAccepted = true;
+            return;
+        }
+
+        if (DateTimeOffset.UtcNow - lastAttemptAt <= (recallAccepted ? RecallRetryInterval : RetryInterval))
         {
             return;
         }
 
         lastAttemptAt = DateTimeOffset.UtcNow;
+
+        log.Information($"[recall] casting Return (accepted so far: {recallAccepted}).");
 
         recallAccepted |= recall.Cast() || recall.IsBusy;
     }
@@ -435,6 +603,8 @@ public sealed class TravelCoordinator : ITravelService
 
     private void BeginMounting()
     {
+        mountedWalkToShard = null;
+
         if (!mount.IsEnabled || mount.IsMounted || RemainingDistance() < MountDistanceThreshold)
         {
             StartWalking();
@@ -482,11 +652,21 @@ public sealed class TravelCoordinator : ITravelService
                 return true;
             }
 
-            return CanBoardHere();
+            return StandingAtTeleportPoint();
         }
     }
 
     private bool CanBoardHere() => NearestShardWithinWalk() != null;
+
+    private bool StandingAtTeleportPoint()
+    {
+        if (playerPosition() is not { } here || NearestShardWithinWalk() is not { } shard)
+        {
+            return false;
+        }
+
+        return Horizontal(here, shard) <= AtTeleportPointRange;
+    }
 
     private Vector3 BoardingDestination(Vector3 shard)
     {

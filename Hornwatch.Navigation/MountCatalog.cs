@@ -9,16 +9,8 @@ namespace Hornwatch.Navigation;
 
 public sealed record MountOption(uint Id, string Name, uint IconId);
 
-public sealed class MountCatalog
+public sealed class MountCatalog(IDataManager data, IDataCache cache)
 {
-    private readonly IDataManager data;
-    private readonly IDataCache cache;
-
-    public MountCatalog(IDataManager data, IDataCache cache)
-    {
-        this.data = data;
-        this.cache = cache;
-    }
 
     public IReadOnlyList<MountOption> All => cache.GetOrCreate("mounts.all", Build);
 

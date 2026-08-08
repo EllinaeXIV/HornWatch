@@ -17,12 +17,12 @@ public static class GamePalettes
     private const uint RowAccent = 8;
 
     public static readonly (string Key, string DisplayName)[] GameThemes =
-    {
+    [
         ("dark", "Dark"),
         ("light", "Light"),
         ("classic", "Classic FF"),
         ("clearwhite", "Clear White"),
-    };
+    ];
 
     public static readonly UiPalette Modern = new()
     {

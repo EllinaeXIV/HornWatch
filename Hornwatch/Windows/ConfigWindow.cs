@@ -10,6 +10,7 @@ using Hornwatch.Core;
 using Hornwatch.Core.Encounters;
 using Hornwatch.Core.Localization;
 using Hornwatch.Core.Modules;
+using Hornwatch.Core.Treasure;
 using Hornwatch.Navigation;
 using Hornwatch.Theming;
 
@@ -18,17 +19,56 @@ namespace Hornwatch.Windows;
 public sealed class ConfigWindow : ThemedWindow, IDisposable
 {
     private static readonly EncounterKind[] AlertKinds =
-    {
+    [
         EncounterKind.CriticalEncounter,
         EncounterKind.NotableFate,
         EncounterKind.Fate,
         EncounterKind.Raid,
+    ];
+
+    private static readonly TreasureKind[] TreasureKinds =
+    [
+        TreasureKind.BronzeCoffer,
+        TreasureKind.SilverCoffer,
+        TreasureKind.PotNorth,
+        TreasureKind.PotSouth,
+        TreasureKind.SecondChance,
+        TreasureKind.Bunny,
+        TreasureKind.Survey,
+    ];
+
+    private static readonly TreasureRarity[] TreasureRarities =
+    [
+        TreasureRarity.Bronze,
+        TreasureRarity.Silver,
+        TreasureRarity.Gold,
+    ];
+
+    private static readonly Dictionary<TreasureRarity, uint> RarityIcons = new()
+    {
+        [TreasureRarity.Bronze] = 60356,
+        [TreasureRarity.Silver] = 60355,
+        [TreasureRarity.Gold] = 60354,
+    };
+
+    private static readonly Dictionary<TreasureKind, uint> TreasureIcons = new()
+    {
+        [TreasureKind.BronzeCoffer] = 60356,
+        [TreasureKind.SilverCoffer] = 60355,
+        [TreasureKind.PotNorth] = 60354,
+        [TreasureKind.PotSouth] = 60354,
+        [TreasureKind.SecondChance] = 61473,
+        [TreasureKind.Bunny] = 25207,
+        [TreasureKind.Survey] = 60357,
     };
 
     private readonly Configuration configuration;
     private readonly ILocalizer localizer;
     private readonly FieldModuleRegistry modules;
     private readonly MountCatalog mounts;
+    private readonly PluginPresence installed;
+    private readonly Action<uint, TreasureKind, bool> setMarkerShown;
+    private readonly Action<uint, bool> setOverlayShown;
 
     private readonly Dictionary<string, uint> editedTerritory = new();
 
@@ -37,6 +77,9 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         ILocalizer localizer,
         FieldModuleRegistry modules,
         MountCatalog mounts,
+        PluginPresence installed,
+        Action<uint, TreasureKind, bool> setMarkerShown,
+        Action<uint, bool> setOverlayShown,
         ThemeManager theme)
         : base($"{PluginMeta.Name}{PluginMeta.WindowId("config")}", theme)
     {
@@ -44,6 +87,9 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         this.localizer = localizer;
         this.modules = modules;
         this.mounts = mounts;
+        this.installed = installed;
+        this.setMarkerShown = setMarkerShown;
+        this.setOverlayShown = setOverlayShown;
 
         Size = new Vector2(560, 620);
         SizeCondition = ImGuiCond.FirstUseEver;
@@ -91,6 +137,11 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         ImGui.TextColored(Theme.Current.Accent, localizer.Get("config.appearance"));
         ImGui.Separator();
         DrawThemePicker();
+
+        if (!BuildFlavour.DeveloperToolsAvailable)
+        {
+            return;
+        }
 
         ImGui.Spacing();
         ImGui.TextColored(Theme.Current.Accent, localizer.Get("config.developer"));
@@ -151,7 +202,7 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
     private void DrawSwatches()
     {
         var palette = Theme.Current;
-        var swatches = new[] { palette.WindowBg, palette.FrameBg, palette.Accent, palette.Text };
+        Vector4[] swatches = [palette.WindowBg, palette.FrameBg, palette.Accent, palette.Text];
 
         var draw = ImGui.GetWindowDrawList();
         var origin = ImGui.GetCursorScreenPos();
@@ -211,12 +262,170 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.TextColored(Theme.Current.Accent, localizer.Get("config.alerts"));
-        ImGui.Separator();
+
+        using var zoneTabs = ImRaii.TabBar($"{module.Key}_sections");
+        if (!zoneTabs.Success)
+        {
+            return;
+        }
+
+        DrawEncounterAlertSection(module, territory);
+        DrawTreasureSection(module, territory);
+    }
+
+    private void DrawEncounterAlertSection(IFieldModule module, uint territory)
+    {
+        using var tab = ImRaii.TabItem(localizer.Get("config.sectionEncounters"));
+        if (!tab.Success)
+        {
+            return;
+        }
+
+        ImGui.Spacing();
 
         foreach (var kind in AlertKinds)
         {
             DrawAlertSetting(module.Key, territory, kind);
+        }
+    }
+
+    private void DrawTreasureSection(IFieldModule module, uint territory)
+    {
+        using var tab = ImRaii.TabItem(localizer.Get("config.sectionTreasure"));
+        if (!tab.Success)
+        {
+            return;
+        }
+
+        if (module.GetCapability<ITreasureSource>() == null)
+        {
+            ImGui.Spacing();
+            ImGui.TextDisabled(localizer.Get("treasure.noData"));
+            return;
+        }
+
+        ImGui.Spacing();
+        ImGui.TextColored(Theme.Current.Accent, localizer.Get("treasure.markers"));
+        ImGui.Separator();
+
+        foreach (var kind in TreasureKinds)
+        {
+            DrawTreasureMarkerToggle(territory, kind);
+        }
+
+        ImGui.Spacing();
+
+        var overlay = configuration.TreasureFor(territory).ShowToolbar;
+        if (ImGui.Checkbox(localizer.Get("treasure.showOverlay"), ref overlay))
+        {
+            setOverlayShown(territory, overlay);
+        }
+
+        ImGui.TextWrapped(localizer.Get("treasure.showOverlayHint"));
+
+        ImGui.Spacing();
+        ImGui.TextColored(Theme.Current.Accent, localizer.Get("treasure.alerts"));
+        ImGui.Separator();
+
+        var alerts = configuration.TreasureFor(territory).Alerts;
+
+        ImGui.TextWrapped(localizer.Get("treasure.alertsHint"));
+        ImGui.Spacing();
+
+        var toast = alerts.Toast;
+        if (ImGui.Checkbox(localizer.Get("treasure.toast"), ref toast))
+        {
+            alerts.Toast = toast;
+            configuration.Save();
+        }
+
+        ImGui.SameLine(0f, ImGui.GetStyle().ItemSpacing.X * 3f);
+
+        var chat = alerts.ChatMessage;
+        if (ImGui.Checkbox(localizer.Get("treasure.chat"), ref chat))
+        {
+            alerts.ChatMessage = chat;
+            configuration.Save();
+        }
+
+        var flag = alerts.MapFlag;
+        if (ImGui.Checkbox(localizer.Get("treasure.flag"), ref flag))
+        {
+            alerts.MapFlag = flag;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("treasure.flagHint"));
+
+        ImGui.Spacing();
+
+        foreach (var rarity in TreasureRarities)
+        {
+            using var id = ImRaii.PushId($"alert{rarity}");
+            var wanted = alerts.Wants(rarity);
+
+            DrawRarityIcon(rarity);
+            if (ImGui.Checkbox(localizer.Get($"treasure.rarity.{rarity}"), ref wanted))
+            {
+                alerts.Set(rarity, wanted);
+                configuration.Save();
+            }
+        }
+
+        ImGui.Spacing();
+
+        var forget = alerts.ForgetAfterSeconds;
+        ImGui.SetNextItemWidth(140f);
+        if (ImGui.SliderInt(localizer.Get("treasure.forget"), ref forget, 10, 900, "%d s"))
+        {
+            alerts.ForgetAfterSeconds = forget;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("treasure.forgetHint"));
+    }
+
+    private void DrawRarityIcon(TreasureRarity rarity)
+    {
+        if (!RarityIcons.TryGetValue(rarity, out var icon))
+        {
+            return;
+        }
+
+        var texture = Svc.Textures.GetFromGameIcon(new GameIconLookup(icon)).GetWrapOrDefault();
+        if (texture == null)
+        {
+            return;
+        }
+
+        ImGui.Image(texture.Handle, new Vector2(ImGui.GetTextLineHeight() + 4f));
+        ImGui.SameLine();
+    }
+
+    private void DrawTreasureMarkerToggle(uint territory, TreasureKind kind)
+    {
+        using var id = ImRaii.PushId($"marker{kind}");
+
+        var shown = configuration.TreasureFor(territory).ShownMarkers.Contains(kind);
+
+        DrawTreasureIcon(kind);
+
+        if (ImGui.Checkbox(localizer.Get($"treasure.kind.{kind}"), ref shown))
+        {
+            setMarkerShown(territory, kind, shown);
+        }
+    }
+
+    private void DrawTreasureIcon(TreasureKind kind)
+    {
+        if (TreasureIcons.TryGetValue(kind, out var icon))
+        {
+            var texture = Svc.Textures.GetFromGameIcon(new GameIconLookup(icon)).GetWrapOrDefault();
+            if (texture != null)
+            {
+                ImGui.Image(texture.Handle, new Vector2(ImGui.GetTextLineHeight() + 4f));
+                ImGui.SameLine();
+            }
         }
     }
 
@@ -369,6 +578,13 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
 
         ImGui.Spacing();
 
+        var pathfinderPresent = installed.IsLoaded(PluginPresence.Vnavmesh);
+        var teleporterPresent = installed.IsLoaded(PluginPresence.Lifestream);
+
+        DrawDependencies(pathfinderPresent, teleporterPresent);
+
+        ImGui.Spacing();
+
         using (ImRaii.PushColor(ImGuiCol.Text, UiTheme.Danger))
         {
             ImGui.TextUnformatted(localizer.Get("nav.warningTitle"));
@@ -376,6 +592,18 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
 
         ImGui.TextWrapped(localizer.Get("nav.warningBody"));
         ImGui.Spacing();
+
+        if (!pathfinderPresent && configuration.AutoTravelEnabled)
+        {
+            configuration.AutoTravelEnabled = false;
+            configuration.Save();
+        }
+
+        if (!teleporterPresent && configuration.UseTeleport)
+        {
+            configuration.UseTeleport = false;
+            configuration.Save();
+        }
 
         var acknowledged = configuration.AutoTravelRiskAcknowledged;
         if (ImGui.Checkbox(localizer.Get("nav.warningAccept"), ref acknowledged))
@@ -390,7 +618,7 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
             configuration.Save();
         }
 
-        using (ImRaii.Disabled(!configuration.AutoTravelRiskAcknowledged))
+        using (ImRaii.Disabled(!configuration.AutoTravelRiskAcknowledged || !pathfinderPresent))
         {
             var enabled = configuration.AutoTravelEnabled;
             if (ImGui.Checkbox(localizer.Get("config.autoTravelEnable"), ref enabled))
@@ -400,14 +628,18 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
             }
 
             ImGui.Spacing();
-            var teleport = configuration.UseTeleport;
-            if (ImGui.Checkbox(localizer.Get("config.useTeleport"), ref teleport))
-            {
-                configuration.UseTeleport = teleport;
-                configuration.Save();
-            }
 
-            ImGui.TextWrapped(localizer.Get("config.useTeleportHint"));
+            using (ImRaii.Disabled(!teleporterPresent))
+            {
+                var teleport = configuration.UseTeleport;
+                if (ImGui.Checkbox(localizer.Get("config.useTeleport"), ref teleport))
+                {
+                    configuration.UseTeleport = teleport;
+                    configuration.Save();
+                }
+
+                ImGui.TextWrapped(localizer.Get("config.useTeleportHint"));
+            }
 
             using (ImRaii.Disabled(!configuration.UseTeleport))
             {
@@ -422,6 +654,17 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
             }
 
             ImGui.Spacing();
+
+            var routeOverlay = configuration.ShowRouteOverlay;
+            if (ImGui.Checkbox(localizer.Get("config.showRouteOverlay"), ref routeOverlay))
+            {
+                configuration.ShowRouteOverlay = routeOverlay;
+                configuration.Save();
+            }
+
+            ImGui.TextWrapped(localizer.Get("config.showRouteOverlayHint"));
+
+            ImGui.Spacing();
             var mount = configuration.UseMount;
             if (ImGui.Checkbox(localizer.Get("config.useMount"), ref mount))
             {
@@ -434,12 +677,52 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
                 DrawMountPicker();
             }
         }
+    }
 
-        ImGui.Spacing();
+    private void DrawDependencies(bool pathfinderPresent, bool teleporterPresent)
+    {
         ImGui.TextColored(Theme.Current.Accent, localizer.Get("config.dependencies"));
         ImGui.Separator();
-        ImGui.TextWrapped(localizer.Get("config.dependencyVnavmesh"));
-        ImGui.Spacing();
-        ImGui.TextWrapped(localizer.Get("config.dependencyLifestream"));
+
+        DrawDependencyBadge(PluginPresence.Vnavmesh, pathfinderPresent, "config.dependencyVnavmesh");
+        ImGui.SameLine();
+        DrawDependencyBadge(PluginPresence.Lifestream, teleporterPresent, "config.dependencyLifestream");
+
+        if (!pathfinderPresent)
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(UiTheme.Danger, localizer.Get("config.dependencyBlocked"));
+        }
+        else if (!teleporterPresent)
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(UiTheme.Warning, localizer.Get("config.dependencyWalkOnly"));
+        }
+    }
+
+    private void DrawDependencyBadge(string internalName, bool present, string tooltipKey)
+    {
+        var colour = present ? UiTheme.Good : UiTheme.Danger;
+
+        using (ImRaii.PushColor(ImGuiCol.Button, colour)
+                     .Push(ImGuiCol.ButtonHovered, colour with { W = 0.8f })
+                     .Push(ImGuiCol.ButtonActive, colour with { W = 0.6f }))
+        {
+            if (ImGui.Button(internalName) && !present)
+            {
+                installed.OpenInstallerFor(internalName);
+            }
+        }
+
+        if (!ImGui.IsItemHovered())
+        {
+            return;
+        }
+
+        using var tooltip = ImRaii.Tooltip();
+        ImGui.TextColored(colour, localizer.Get(present ? "config.dependencyFound" : "config.dependencyMissing"));
+        ImGui.PushTextWrapPos(ImGui.GetFontSize() * 24f);
+        ImGui.TextWrapped(localizer.Get(tooltipKey));
+        ImGui.PopTextWrapPos();
     }
 }

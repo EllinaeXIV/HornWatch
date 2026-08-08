@@ -4,20 +4,13 @@ using Hornwatch.Core.Encounters;
 
 namespace Hornwatch.Modules.OccultCrescent;
 
-public sealed class PotRotationRule : IRespawnRule
+public sealed class PotRotationRule(PotCatalog catalog) : IRespawnRule
 {
     private static readonly TimeSpan RespawnCycle = TimeSpan.FromMinutes(30);
 
-    private static readonly string[] NoSlots = Array.Empty<string>();
-
-    private readonly PotCatalog catalog;
+    private static readonly string[] NoSlots = [];
 
     private readonly Dictionary<uint, string[]> slotsByTerritory = new();
-
-    public PotRotationRule(PotCatalog catalog)
-    {
-        this.catalog = catalog;
-    }
 
     public string? SlotOf(TrackedEncounter encounter, uint territoryId)
     {
@@ -37,7 +30,7 @@ public sealed class PotRotationRule : IRespawnRule
             return cached;
         }
 
-        var slots = HasPots(territoryId) ? new[] { SlotKey(territoryId) } : NoSlots;
+        string[] slots = HasPots(territoryId) ? [SlotKey(territoryId)] : NoSlots;
         slotsByTerritory[territoryId] = slots;
         return slots;
     }

@@ -7,19 +7,10 @@ using Hornwatch.Core.Navigation;
 
 namespace Hornwatch.Navigation;
 
-public sealed class MountService : IMountController
+public sealed class MountService(ICondition condition, Func<uint?> choice) : IMountController
 {
     private const uint MountRouletteActionId = 9;
     private const uint DismountActionId = 23;
-
-    private readonly ICondition condition;
-    private readonly Func<uint?> choice;
-
-    public MountService(ICondition condition, Func<uint?> choice)
-    {
-        this.condition = condition;
-        this.choice = choice;
-    }
 
     public bool IsEnabled => choice() != null;
 

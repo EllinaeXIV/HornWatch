@@ -10,13 +10,17 @@ using Hornwatch.Core;
 using Hornwatch.Core.Alerts;
 using Hornwatch.Core.Caching;
 using Hornwatch.Core.Encounters;
+using Hornwatch.Core.Hazards;
 using Hornwatch.Core.Modules;
 using Hornwatch.Core.Navigation;
+using Hornwatch.Core.Treasure;
 using Hornwatch.Localization;
 using Hornwatch.Modules.OccultCrescent;
 using Hornwatch.Navigation;
 using Hornwatch.Theming;
 using Hornwatch.Windows;
+using Hornwatch.Windows.Map;
+using KamiToolKit;
 
 namespace Hornwatch;
 
@@ -29,6 +33,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly AlertPlayer alertPlayer;
     private readonly JsonLocalizer localizer;
     private readonly MemoryDataCache cache;
+    private readonly PluginPresence installed;
+    private readonly TreasureSpottedWatcher treasureWatcher;
+    private readonly MapMarkers mapMarkers;
+    private readonly TreasureMapToolbar treasureToolbar;
+    private readonly TreasureHunt treasureHunt;
+    private readonly RouteOverlay routeOverlay;
 
     private readonly WindowSystem windowSystem = new(PluginMeta.InternalName);
     private readonly MainWindow mainWindow;
@@ -40,38 +50,50 @@ public sealed class Plugin : IDalamudPlugin
     {
         Svc.Init(PluginInterface);
 
+        KamiToolKitLibrary.Initialize(PluginInterface, PluginMeta.Name);
+
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        cache = new MemoryDataCache(() => Configuration.DeveloperMode);
+        cache = new MemoryDataCache(() => BuildFlavour.DeveloperToolsAvailable && Configuration.DeveloperMode);
+
+        var resourceDirectory = Path.Combine(PluginInterface.AssemblyLocation.Directory!.FullName, "Resources");
 
         localizer = new JsonLocalizer(
-            Path.Combine(PluginInterface.AssemblyLocation.Directory!.FullName, "Resources"),
+            resourceDirectory,
             Svc.ClientState,
-            () => Configuration.LanguageOverride);
+            () => Configuration.LanguageOverride,
+            Svc.Log);
 
         var respawnStore = new ConfigurationRespawnStore(Configuration);
+
+        installed = new PluginPresence(PluginInterface);
+
+        var pathfinder = new PathfinderRouter(
+            new VnavmeshPathfinder(PluginInterface, installed, Svc.Log),
+            () => Configuration.AutoTravelEnabled && Configuration.AutoTravelRiskAcknowledged);
 
         modules = new FieldModuleRegistry(
         [
             new OccultCrescentModule(
                 Svc.Data, Svc.Objects, Svc.Fates, cache, respawnStore,
-                () => Svc.ClientState.TerritoryType),
+                resourceDirectory, Svc.Log,
+                () => Svc.ClientState.TerritoryType,
+                pathfinder.GroundLevelAt),
         ]);
 
-        var pathfinder = new PathfinderRouter(
-            new VnavmeshPathfinder(PluginInterface, Svc.Log),
-            () => Configuration.AutoTravelEnabled && Configuration.AutoTravelRiskAcknowledged);
+        var confirmation = new SelectYesnoConfirmer(Svc.GameGui, Svc.Data, Svc.Log);
 
         Travel = new TravelCoordinator(
             pathfinder,
             new FirstWorkingTeleporter(
-                new LifestreamTeleporter(PluginInterface, Svc.Data, Svc.Log),
+                new LifestreamTeleporter(PluginInterface, installed, Svc.Data, Svc.Log),
                 new ShardTeleporter(
-                    Svc.Objects, Svc.Targets, Svc.GameGui, Svc.Data, Svc.Log,
+                    Svc.Objects, Svc.Targets, Svc.GameGui, Svc.Data,
+                    confirmation, Svc.Log,
                     () => Svc.Objects.LocalPlayer?.Position)),
             new MountService(Svc.Condition, () => Configuration.UseMount ? Configuration.MountId : null),
             new ReturnService(Svc.Condition),
-            new SelectYesnoConfirmer(Svc.GameGui),
+            confirmation,
             () => modules.Capability<ITeleportNetwork>(),
             () => Svc.Objects.LocalPlayer?.Position,
             () => Svc.ClientState.TerritoryType,
@@ -79,6 +101,8 @@ public sealed class Plugin : IDalamudPlugin
             () => Configuration.UseTeleport,
             () => Configuration.UseReturn,
             () => Configuration.AutoTravelEnabled && Configuration.AutoTravelRiskAcknowledged,
+            () => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat],
+            new JumpService(),
             Svc.Log);
 
         alertPlayer = new AlertPlayer(
@@ -87,10 +111,53 @@ public sealed class Plugin : IDalamudPlugin
             () => Svc.ClientState.TerritoryType);
         alertEngine.Appeared += alertPlayer.Handle;
 
+        var flagger = new MapFlagger(Svc.GameGui, Svc.Data, Svc.ClientState);
+
+        treasureWatcher = new TreasureSpottedWatcher(
+            () => modules.Capability<ISpottedTreasureSource>(),
+            () => Svc.Objects.LocalPlayer?.Position,
+            () => Svc.ClientState.TerritoryType,
+            () => Svc.ClientState.MapId,
+            () => Configuration.TreasureFor(Svc.ClientState.TerritoryType).Alerts,
+            localizer, Svc.Chat, Svc.Toasts, flagger);
+
+        treasureHunt = new TreasureHunt(
+            Travel,
+            () => modules.Capability<ISpottedTreasureSource>(),
+            () => modules.Capability<IHazardSource>(),
+            () => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat],
+            () => Svc.Objects.LocalPlayer?.Position,
+            () => Svc.ClientState.TerritoryType,
+            Svc.Log);
+
+        mapMarkers = new MapMarkers(
+            () => modules.Capability<ITreasureSource>(),
+            () => Svc.ClientState.TerritoryType,
+            () => Configuration.TreasureFor(Svc.ClientState.TerritoryType).ShownMarkers,
+            () => treasureHunt.Route,
+            () => treasureHunt.Index,
+            () => Configuration.ShowRouteOverlay && treasureHunt.State != HuntState.Idle,
+            Svc.AddonLifecycle, Svc.Framework, Svc.Log);
+
+        treasureToolbar = new TreasureMapToolbar(
+            Svc.Framework,
+            localizer,
+            () => modules.Capability<ITreasureSource>() != null
+                  && Configuration.TreasureFor(Svc.ClientState.TerritoryType).ShowToolbar,
+            () => Configuration.TreasureFor(Svc.ClientState.TerritoryType).ShownMarkers,
+            (kind, shown) => SetTreasureMarkerShown(Svc.ClientState.TerritoryType, kind, shown),
+            Svc.Log);
+
+        routeOverlay = new RouteOverlay(
+            Travel, treasureHunt, Svc.GameGui, Svc.Objects, localizer,
+            () => Configuration.ShowRouteOverlay,
+            () => modules.Active != null);
+
         var theme = new ThemeManager(Svc.Data, Svc.GameConfig, cache, Configuration);
 
-        mainWindow = new MainWindow(this, modules, localizer, Travel, theme);
-        configWindow = new ConfigWindow(this, localizer, modules, new MountCatalog(Svc.Data, cache), theme);
+        mainWindow = new MainWindow(this, modules, localizer, Travel, flagger, treasureHunt, theme);
+        configWindow = new ConfigWindow(this, localizer, modules, new MountCatalog(Svc.Data, cache), installed,
+            SetTreasureMarkerShown, SetTreasureOverlayShown, theme);
         windowSystem.AddWindow(mainWindow);
         windowSystem.AddWindow(configWindow);
 
@@ -106,6 +173,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Framework.Update += OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw += routeOverlay.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
 
@@ -120,12 +188,16 @@ public sealed class Plugin : IDalamudPlugin
     {
         Svc.Framework.Update -= OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw -= routeOverlay.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
 
         alertEngine.Appeared -= alertPlayer.Handle;
 
-        Travel.Stop();
+        treasureHunt.Stop();
+        treasureToolbar.Dispose();
+        mapMarkers.Dispose();
+        KamiToolKitLibrary.Dispose();
 
         windowSystem.RemoveAllWindows();
         Svc.Commands.RemoveHandler(PluginMeta.Command);
@@ -145,7 +217,10 @@ public sealed class Plugin : IDalamudPlugin
             modules.SetTerritory(territory);
 
             alertEngine.Reset();
+            treasureWatcher.Reset();
         }
+
+        treasureToolbar.Sync();
 
         var active = modules.Active;
         if (active == null)
@@ -155,11 +230,39 @@ public sealed class Plugin : IDalamudPlugin
 
         active.Update();
 
+        treasureHunt.Tick();
+        treasureWatcher.Tick();
+        mapMarkers.Tick();
+
         var encounters = active.GetCapability<IEncounterSource>();
         if (encounters != null)
         {
             alertEngine.Observe(encounters.Active);
         }
+    }
+
+    internal void SetTreasureMarkerShown(uint territoryId, TreasureKind kind, bool shown)
+    {
+        var zone = Configuration.TreasureFor(territoryId).ShownMarkers;
+
+        if (shown)
+        {
+            zone.Add(kind);
+        }
+        else
+        {
+            zone.Remove(kind);
+        }
+
+        Configuration.Save();
+        treasureToolbar.Sync();
+    }
+
+    internal void SetTreasureOverlayShown(uint territoryId, bool shown)
+    {
+        Configuration.TreasureFor(territoryId).ShowToolbar = shown;
+        Configuration.Save();
+        treasureToolbar.Sync();
     }
 
     private bool IsEncounterStillActive(string id)
@@ -183,7 +286,9 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args) => mainWindow.Toggle();
 
-    private void ToggleConfigUi() => configWindow.Toggle();
+    internal void ToggleConfigWindow() => configWindow.Toggle();
+
+    private void ToggleConfigUi() => ToggleConfigWindow();
 
     private void ToggleMainUi() => mainWindow.Toggle();
 }

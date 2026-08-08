@@ -11,22 +11,11 @@ using Hornwatch.Theming;
 
 namespace Hornwatch.Windows.Tabs;
 
-public sealed class GuideTab : ITab
+public sealed class GuideTab(FieldModuleRegistry modules, ILocalizer localizer, ThemeManager theme) : ITab
 {
     private const float IconSize = 30f;
 
-    private readonly FieldModuleRegistry modules;
-    private readonly ILocalizer localizer;
-    private readonly ThemeManager theme;
-
     private int selected;
-
-    public GuideTab(FieldModuleRegistry modules, ILocalizer localizer, ThemeManager theme)
-    {
-        this.modules = modules;
-        this.localizer = localizer;
-        this.theme = theme;
-    }
 
     public string TitleKey => "tab.guides";
 

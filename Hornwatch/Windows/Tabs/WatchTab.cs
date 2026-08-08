@@ -1,6 +1,8 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using Hornwatch.Core.Encounters;
 using Hornwatch.Core.Localization;
@@ -10,20 +12,8 @@ using Hornwatch.Core.Navigation;
 
 namespace Hornwatch.Windows.Tabs;
 
-public sealed class WatchTab : ITab
+public sealed class WatchTab(FieldModuleRegistry modules, ILocalizer localizer, ITravelService travel, MapFlagger flagger, ThemeManager theme) : ITab
 {
-    private readonly FieldModuleRegistry modules;
-    private readonly ILocalizer localizer;
-    private readonly ThemeManager theme;
-    private readonly ITravelService travel;
-
-    public WatchTab(FieldModuleRegistry modules, ILocalizer localizer, ITravelService travel, ThemeManager theme)
-    {
-        this.modules = modules;
-        this.localizer = localizer;
-        this.theme = theme;
-        this.travel = travel;
-    }
 
     public string TitleKey => "tab.watch";
 
@@ -99,9 +89,15 @@ public sealed class WatchTab : ITab
 
             ImGui.TextDisabled(localizer.Get("watch.awaiting"));
 
-            if (prediction.Position is { } destination && travel.IsEnabled)
+            if (prediction.Position is { } destination)
             {
-                DrawTravelButton(destination);
+                DrawFlagButton(destination);
+
+                if (travel.IsEnabled)
+                {
+                    ImGui.SameLine();
+                    DrawTravelButton(destination);
+                }
             }
 
             ImGui.Separator();
@@ -126,9 +122,15 @@ public sealed class WatchTab : ITab
 
         ImGui.TextDisabled(BuildMeta(encounter));
 
-        if (encounter.Position is { } destination && travel.IsEnabled && encounter.IsJoinable)
+        if (encounter.Position is { } destination)
         {
-            DrawTravelButton(destination, encounter.Id, encounter.Radius);
+            DrawFlagButton(destination);
+
+            if (travel.IsEnabled && encounter.IsJoinable)
+            {
+                ImGui.SameLine();
+                DrawTravelButton(destination, encounter.Id, encounter.Radius);
+            }
         }
 
         ImGui.Separator();
@@ -174,6 +176,19 @@ public sealed class WatchTab : ITab
         }
 
         return phase;
+    }
+
+    private void DrawFlagButton(Vector3 destination)
+    {
+        if (ImGuiComponents.IconButton(FontAwesomeIcon.Flag))
+        {
+            flagger.Place(destination);
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(localizer.Get("watch.placeFlag"));
+        }
     }
 
     private void DrawTravelButton(Vector3 destination, string? targetId = null, float? radius = null)

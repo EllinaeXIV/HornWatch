@@ -8,18 +8,9 @@ using LuminaAction = Lumina.Excel.Sheets.Action;
 
 namespace Hornwatch.Modules.OccultCrescent;
 
-public sealed class PhantomBlueMageGuide : IZoneGuide
+public sealed class PhantomBlueMageGuide(IDataManager data, IDataCache cache) : IZoneGuide
 {
     private const string NorthHorn = "North Horn";
-
-    private readonly IDataManager data;
-    private readonly IDataCache cache;
-
-    public PhantomBlueMageGuide(IDataManager data, IDataCache cache)
-    {
-        this.data = data;
-        this.cache = cache;
-    }
 
     public string TitleKey => "guide.blueMage.title";
     public string IntroKey => "guide.blueMage.intro";

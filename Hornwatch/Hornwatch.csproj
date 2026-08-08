@@ -6,6 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="KamiToolKit" Version="2.0.23" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Hornwatch.Core\Hornwatch.Core.csproj" />
     <ProjectReference Include="..\Hornwatch.Navigation\Hornwatch.Navigation.csproj" />
     <ProjectReference Include="..\Hornwatch.Modules.OccultCrescent\Hornwatch.Modules.OccultCrescent.csproj" />

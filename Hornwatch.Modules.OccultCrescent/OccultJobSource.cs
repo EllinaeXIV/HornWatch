@@ -7,16 +7,8 @@ using Hornwatch.Core.Jobs;
 
 namespace Hornwatch.Modules.OccultCrescent;
 
-public sealed class OccultJobSource : ISpecialJobSource
+public sealed class OccultJobSource(PhantomJobCatalog catalog, IObjectTable objects) : ISpecialJobSource
 {
-    private readonly PhantomJobCatalog catalog;
-    private readonly IObjectTable objects;
-
-    public OccultJobSource(PhantomJobCatalog catalog, IObjectTable objects)
-    {
-        this.catalog = catalog;
-        this.objects = objects;
-    }
 
     public string SystemNameKey => "occult.phantomJobs";
 

@@ -5,16 +5,9 @@ using Hornwatch.Core.Navigation;
 
 namespace Hornwatch.Navigation;
 
-public sealed class ReturnService : IRecall
+public sealed class ReturnService(ICondition condition) : IRecall
 {
     private const uint ReturnActionId = 8;
-
-    private readonly ICondition condition;
-
-    public ReturnService(ICondition condition)
-    {
-        this.condition = condition;
-    }
 
     public bool IsBusy =>
         condition[ConditionFlag.Casting] ||

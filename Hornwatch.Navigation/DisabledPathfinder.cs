@@ -15,6 +15,8 @@ public sealed class DisabledPathfinder : IPathfinder
 
     public Vector3 SnapToGround(Vector3 approximate) => approximate;
 
+    public Vector3 GroundLevelAt(Vector3 column) => column;
+
     public void MoveTo(Vector3 destination) { }
 
     public void Stop() { }

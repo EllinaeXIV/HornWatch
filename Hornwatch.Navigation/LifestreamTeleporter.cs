@@ -9,9 +9,7 @@ namespace Hornwatch.Navigation;
 
 public sealed class LifestreamTeleporter : ITeleporter
 {
-    private const string LifestreamInternalName = "Lifestream";
-
-    private readonly IDalamudPluginInterface pluginInterface;
+    private readonly PluginPresence installed;
     private readonly IDataManager data;
     private readonly IPluginLog log;
 
@@ -20,9 +18,9 @@ public sealed class LifestreamTeleporter : ITeleporter
     private readonly ICallGateSubscriber<bool> isBusy;
     private readonly ICallGateSubscriber<object> abort;
 
-    public LifestreamTeleporter(IDalamudPluginInterface pluginInterface, IDataManager data, IPluginLog log)
+    public LifestreamTeleporter(IDalamudPluginInterface pluginInterface, PluginPresence installed, IDataManager data, IPluginLog log)
     {
-        this.pluginInterface = pluginInterface;
+        this.installed = installed;
         this.data = data;
         this.log = log;
 
@@ -109,24 +107,11 @@ public sealed class LifestreamTeleporter : ITeleporter
         {
             abort.InvokeAction();
         }
-        catch
+        catch (Exception ex)
         {
+            log.Warning(ex, "Lifestream.Abort failed; a teleport it had started may still be running.");
         }
     }
 
-    private bool IsInstalled
-    {
-        get
-        {
-            foreach (var plugin in pluginInterface.InstalledPlugins)
-            {
-                if (plugin.InternalName == LifestreamInternalName && plugin.IsLoaded)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-    }
+    private bool IsInstalled => installed.IsLoaded(PluginPresence.Lifestream);
 }

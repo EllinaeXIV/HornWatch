@@ -9,18 +9,8 @@ using Hornwatch.Modules.OccultCrescent;
 
 namespace Hornwatch.Windows.Tabs;
 
-public sealed class PartyTab : ITab
+public sealed class PartyTab(FieldModuleRegistry modules, ILocalizer localizer, ThemeManager theme) : ITab
 {
-    private readonly FieldModuleRegistry modules;
-    private readonly ILocalizer localizer;
-    private readonly ThemeManager theme;
-
-    public PartyTab(FieldModuleRegistry modules, ILocalizer localizer, ThemeManager theme)
-    {
-        this.modules = modules;
-        this.localizer = localizer;
-        this.theme = theme;
-    }
 
     public string TitleKey => "tab.party";
 

@@ -10,18 +10,8 @@ using Hornwatch.Modules.OccultCrescent;
 
 namespace Hornwatch.Windows.Tabs;
 
-public sealed class MyJobsTab : ITab
+public sealed class MyJobsTab(FieldModuleRegistry modules, ILocalizer localizer, ThemeManager theme) : ITab
 {
-    private readonly FieldModuleRegistry modules;
-    private readonly ILocalizer localizer;
-    private readonly ThemeManager theme;
-
-    public MyJobsTab(FieldModuleRegistry modules, ILocalizer localizer, ThemeManager theme)
-    {
-        this.modules = modules;
-        this.localizer = localizer;
-        this.theme = theme;
-    }
 
     public string TitleKey => "tab.myJobs";
 

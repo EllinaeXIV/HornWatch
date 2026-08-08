@@ -6,22 +6,9 @@ using Hornwatch.Core.Theming;
 
 namespace Hornwatch.Theming;
 
-public sealed class ThemeManager
+public sealed class ThemeManager(IDataManager data, IGameConfig gameConfig, IDataCache cache, Configuration configuration)
 {
     public const string FollowGameKey = "auto";
-
-    private readonly IDataManager data;
-    private readonly IGameConfig gameConfig;
-    private readonly IDataCache cache;
-    private readonly Configuration configuration;
-
-    public ThemeManager(IDataManager data, IGameConfig gameConfig, IDataCache cache, Configuration configuration)
-    {
-        this.data = data;
-        this.gameConfig = gameConfig;
-        this.cache = cache;
-        this.configuration = configuration;
-    }
 
     public IReadOnlyList<(string Key, string DisplayName)> Options
     {

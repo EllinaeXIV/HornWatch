@@ -3,15 +3,9 @@ using System.Collections.Concurrent;
 
 namespace Hornwatch.Core.Caching;
 
-public sealed class MemoryDataCache : IDataCache
+public sealed class MemoryDataCache(Func<bool> bypassProvider) : IDataCache
 {
     private readonly ConcurrentDictionary<string, object> entries = new();
-    private readonly Func<bool> bypassProvider;
-
-    public MemoryDataCache(Func<bool> bypassProvider)
-    {
-        this.bypassProvider = bypassProvider;
-    }
 
     public bool Bypass => bypassProvider();
 

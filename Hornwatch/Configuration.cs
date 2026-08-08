@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Configuration;
 using Hornwatch.Core.Encounters;
+using Hornwatch.Core.Treasure;
 
 namespace Hornwatch;
 
@@ -37,6 +38,45 @@ public class Configuration : IPluginConfiguration
     public bool UseTeleport { get; set; } = true;
 
     public bool UseReturn { get; set; } = true;
+
+    public bool ShowRouteOverlay { get; set; }
+
+    public Dictionary<uint, TreasureZoneSettings> TreasureByTerritory { get; set; } = new();
+
+    public bool ShowTreasureToolbar { get; set; } = true;
+
+    public TreasureAlertSettings TreasureAlerts { get; set; } = new();
+
+    public TreasureRouteOptions TreasureRoute { get; set; } = new();
+
+    public HashSet<TreasureKind> ShownTreasureMarkers { get; set; } =
+        [TreasureKind.BronzeCoffer, TreasureKind.SilverCoffer];
+
+    public TreasureZoneSettings TreasureFor(uint territoryId)
+    {
+        if (TreasureByTerritory.TryGetValue(territoryId, out var existing))
+        {
+            return existing;
+        }
+
+        var created = new TreasureZoneSettings
+        {
+            ShownMarkers = [.. ShownTreasureMarkers],
+            ShowToolbar = ShowTreasureToolbar,
+            Alerts = new TreasureAlertSettings
+            {
+                Toast = TreasureAlerts.Toast,
+                ChatMessage = TreasureAlerts.ChatMessage,
+                MapFlag = TreasureAlerts.MapFlag,
+                ForgetAfterSeconds = TreasureAlerts.ForgetAfterSeconds,
+                Rarities = new Dictionary<TreasureRarity, bool>(TreasureAlerts.Rarities),
+            },
+            Route = TreasureRoute,
+        };
+
+        TreasureByTerritory[territoryId] = created;
+        return created;
+    }
 
     public Dictionary<string, AlertSetting> Alerts { get; set; } = new();
 

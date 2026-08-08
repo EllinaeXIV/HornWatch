@@ -3,16 +3,10 @@ using Hornwatch.Core.Navigation;
 
 namespace Hornwatch.Navigation;
 
-public sealed class FirstWorkingTeleporter : ITeleporter
+public sealed class FirstWorkingTeleporter(params ITeleporter[] candidates) : ITeleporter
 {
-    private readonly ITeleporter[] candidates;
 
     private ITeleporter? active;
-
-    public FirstWorkingTeleporter(params ITeleporter[] candidates)
-    {
-        this.candidates = candidates;
-    }
 
     public bool IsAvailable
     {

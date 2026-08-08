@@ -44,22 +44,12 @@ public sealed record RespawnPrediction(
     public bool IsDue => IsKnown && Remaining <= TimeSpan.Zero;
 }
 
-public sealed class RespawnTracker
+public sealed class RespawnTracker(IRespawnStore store, IRespawnRule rule, Func<uint> currentTerritory)
 {
-    private readonly IRespawnStore store;
-    private readonly IRespawnRule rule;
-    private readonly Func<uint> currentTerritory;
 
     private readonly Dictionary<string, TrackedEncounter> previouslySeen = new();
 
     private readonly HashSet<string> occupied = new();
-
-    public RespawnTracker(IRespawnStore store, IRespawnRule rule, Func<uint> currentTerritory)
-    {
-        this.store = store;
-        this.rule = rule;
-        this.currentTerritory = currentTerritory;
-    }
 
     public void Observe(IReadOnlyList<TrackedEncounter> active)
     {
@@ -70,7 +60,7 @@ public sealed class RespawnTracker
             Invalidate(territory);
         }
 
-        var present = new Dictionary<string, TrackedEncounter>();
+        Dictionary<string, TrackedEncounter> present = [];
 
         foreach (var encounter in active)
         {

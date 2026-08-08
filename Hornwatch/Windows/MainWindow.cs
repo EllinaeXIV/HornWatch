@@ -4,10 +4,12 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Dalamud.Interface;
 using Hornwatch.Core;
 using Hornwatch.Core.Localization;
 using Hornwatch.Core.Modules;
 using Hornwatch.Core.Navigation;
+using Hornwatch.Core.Treasure;
 using Hornwatch.Theming;
 using Hornwatch.Windows.Tabs;
 
@@ -24,15 +26,25 @@ public sealed class MainWindow : ThemedWindow, IDisposable
         FieldModuleRegistry modules,
         ILocalizer localizer,
         ITravelService travel,
+        MapFlagger flagger,
+        TreasureHunt hunt,
         ThemeManager theme)
         : base($"{PluginMeta.Name}{PluginMeta.WindowId("main")}", theme)
     {
         this.modules = modules;
         this.localizer = localizer;
 
+        TitleBarButtons.Add(new TitleBarButton
+        {
+            Icon = FontAwesomeIcon.Cog,
+            IconOffset = new Vector2(2f, 1f),
+            Click = _ => plugin.ToggleConfigWindow(),
+            ShowTooltip = () => ImGui.SetTooltip(localizer.Get("plugin.openSettings")),
+        });
+
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(460, 300),
+            MinimumSize = new Vector2(200, 100),
             MaximumSize = new Vector2(1400, 1000),
         };
         Size = new Vector2(620, 460);
@@ -40,7 +52,8 @@ public sealed class MainWindow : ThemedWindow, IDisposable
 
         tabs =
         [
-            new WatchTab(modules, localizer, travel, theme),
+            new WatchTab(modules, localizer, travel, flagger, theme),
+            new TreasureTab(modules, localizer, plugin.Configuration, hunt, travel, flagger, theme),
             new PartyTab(modules, localizer, theme),
             new MyJobsTab(modules, localizer, theme),
             new GuideTab(modules, localizer, theme),

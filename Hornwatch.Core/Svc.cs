@@ -20,6 +20,8 @@ public class Svc
     [PluginService] public static IGameGui GameGui { get; private set; } = null!;
     [PluginService] public static ITargetManager Targets { get; private set; } = null!;
     [PluginService] public static ITextureProvider Textures { get; private set; } = null!;
+    [PluginService] public static IToastGui Toasts { get; private set; } = null!;
+    [PluginService] public static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
     [PluginService] public static IPluginLog Log { get; private set; } = null!;
 
     public static void Init(IDalamudPluginInterface pluginInterface)

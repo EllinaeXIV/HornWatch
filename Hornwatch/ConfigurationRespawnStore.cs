@@ -4,14 +4,8 @@ using Hornwatch.Core.Encounters;
 
 namespace Hornwatch;
 
-public sealed class ConfigurationRespawnStore : IRespawnStore
+public sealed class ConfigurationRespawnStore(Configuration configuration) : IRespawnStore
 {
-    private readonly Configuration configuration;
-
-    public ConfigurationRespawnStore(Configuration configuration)
-    {
-        this.configuration = configuration;
-    }
 
     public Dictionary<string, RespawnEntry> Entries => configuration.PotForecasts;
 

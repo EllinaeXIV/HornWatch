@@ -9,19 +9,11 @@ using Hornwatch.Core.Encounters;
 
 namespace Hornwatch.Modules.OccultCrescent;
 
-public sealed class OccultEncounterSource : IEncounterSource
+public sealed class OccultEncounterSource(IFateTable fates, PotCatalog pots, TowerCatalog towers, Func<uint> currentTerritory) : IEncounterSource
 {
     private static readonly ushort[] ForkedTowerEventIds = { 48, 64, 65 };
 
-    private readonly IFateTable fates;
-    private readonly PotCatalog pots;
     private readonly List<TrackedEncounter> active = new();
-
-    public OccultEncounterSource(IFateTable fates, PotCatalog pots)
-    {
-        this.fates = fates;
-        this.pots = pots;
-    }
 
     public IReadOnlyList<TrackedEncounter> Active => active;
 
@@ -63,20 +55,20 @@ public sealed class OccultEncounterSource : IEncounterSource
                 continue;
             }
 
+            var isTower = Array.IndexOf(ForkedTowerEventIds, slot.DynamicEventId) >= 0;
+
             active.Add(new TrackedEncounter
             {
                 Id = $"ce:{slot.DynamicEventId}",
                 SourceId = slot.DynamicEventId,
-                Kind = Array.IndexOf(ForkedTowerEventIds, slot.DynamicEventId) >= 0
-                    ? EncounterKind.Raid
-                    : EncounterKind.CriticalEncounter,
+                Kind = isTower ? EncounterKind.Raid : EncounterKind.CriticalEncounter,
                 Name = name,
                 Phase = phase,
                 TimeRemaining = TimeSpan.FromSeconds(slot.SecondsLeft),
                 Progress = slot.Progress / 100f,
                 Participants = slot.Participants,
                 MaxParticipants = slot.MaxParticipants,
-                Position = ReadMarkerPosition(slot.MapMarker),
+                Position = ReadMarkerPosition(slot.MapMarker) ?? (isTower ? towers.PositionIn(currentTerritory()) : null),
             });
         }
     }

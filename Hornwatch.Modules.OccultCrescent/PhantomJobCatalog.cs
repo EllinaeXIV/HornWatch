@@ -6,10 +6,10 @@ using LuminaStatus = Lumina.Excel.Sheets.Status;
 
 namespace Hornwatch.Modules.OccultCrescent;
 
-public sealed class PhantomJobCatalog
+public sealed class PhantomJobCatalog(IDataManager data, IDataCache cache)
 {
     private static readonly uint[] StatusIdByJobId =
-    {
+    [
         4242, 
         4358, 
         4359, 
@@ -34,26 +34,17 @@ public sealed class PhantomJobCatalog
         5333, 
         5334, 
         5335, 
-    };
+    ];
 
     private static readonly string[] FallbackNames =
-    {
+    [
         "Freelancer", "Knight", "Berserker", "Monk", "Ranger", "Samurai", "Bard",
         "Geomancer", "Time Mage", "Cannoneer", "Chemist", "Oracle", "Thief",
         "Mystic Knight", "Gladiator", "Dancer", "Ninja", "White Mage", "Black Mage",
         "Dragoon", "Summoner", "Blue Mage", "Red Mage", "Necromancer",
-    };
+    ];
 
     public const int JobCount = 24;
-
-    private readonly IDataManager data;
-    private readonly IDataCache cache;
-
-    public PhantomJobCatalog(IDataManager data, IDataCache cache)
-    {
-        this.data = data;
-        this.cache = cache;
-    }
 
     public IReadOnlyList<SpecialJob> All => cache.GetOrCreate("occult.phantomjobs", Build);
 

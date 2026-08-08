@@ -6,27 +6,8 @@ using Hornwatch.Core.Localization;
 
 namespace Hornwatch.Alerts;
 
-public sealed class AlertPlayer
+public sealed class AlertPlayer(Configuration configuration, ILocalizer localizer, IChatGui chat, Func<string?> activeModuleKey, Func<uint> currentTerritory)
 {
-    private readonly Configuration configuration;
-    private readonly ILocalizer localizer;
-    private readonly IChatGui chat;
-    private readonly Func<string?> activeModuleKey;
-    private readonly Func<uint> currentTerritory;
-
-    public AlertPlayer(
-        Configuration configuration,
-        ILocalizer localizer,
-        IChatGui chat,
-        Func<string?> activeModuleKey,
-        Func<uint> currentTerritory)
-    {
-        this.configuration = configuration;
-        this.localizer = localizer;
-        this.chat = chat;
-        this.activeModuleKey = activeModuleKey;
-        this.currentTerritory = currentTerritory;
-    }
 
     public void Handle(AlertEvent alert)
     {

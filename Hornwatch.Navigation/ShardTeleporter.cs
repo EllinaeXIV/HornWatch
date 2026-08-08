@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Plugin.Services;
@@ -10,7 +11,7 @@ using Lumina.Excel.Sheets;
 
 namespace Hornwatch.Navigation;
 
-public sealed class ShardTeleporter : ITeleporter
+public sealed class ShardTeleporter(IObjectTable objects, ITargetManager targets, IGameGui gameGui, IDataManager data, IConfirmationDialog confirmation, IPluginLog log, Func<Vector3?> playerPosition) : ITeleporter
 {
     private const float InteractRange = 10f;
 
@@ -20,6 +21,8 @@ public sealed class ShardTeleporter : ITeleporter
 
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2.5);
 
+    private static readonly TimeSpan ConfirmationWindow = TimeSpan.FromSeconds(2);
+
     private enum Step
     {
         Idle,
@@ -27,14 +30,9 @@ public sealed class ShardTeleporter : ITeleporter
         Opening,
 
         Choosing,
-    }
 
-    private readonly IObjectTable objects;
-    private readonly ITargetManager targets;
-    private readonly IGameGui gameGui;
-    private readonly IDataManager data;
-    private readonly IPluginLog log;
-    private readonly Func<Vector3?> playerPosition;
+        Confirming,
+    }
 
     private Step step = Step.Idle;
     private string destination = string.Empty;
@@ -42,22 +40,6 @@ public sealed class ShardTeleporter : ITeleporter
     private DateTimeOffset lastAttemptAt;
     private bool chosen;
     private Dalamud.Game.ClientState.Objects.Types.IGameObject? previousTarget;
-
-    public ShardTeleporter(
-        IObjectTable objects,
-        ITargetManager targets,
-        IGameGui gameGui,
-        IDataManager data,
-        IPluginLog log,
-        Func<Vector3?> playerPosition)
-    {
-        this.objects = objects;
-        this.targets = targets;
-        this.gameGui = gameGui;
-        this.data = data;
-        this.log = log;
-        this.playerPosition = playerPosition;
-    }
 
     public bool IsAvailable => true;
 
@@ -78,7 +60,8 @@ public sealed class ShardTeleporter : ITeleporter
 
         if (NearestShard() is not { } shard)
         {
-            log.Information($"[shard] none within {InteractRange}y of the player; cannot board here.");
+            log.Information(
+                $"[shard] no ObjectKind.Aetheryte within {InteractRange}y. Nearby instead: {DescribeNearby()}");
             return false;
         }
 
@@ -122,15 +105,30 @@ public sealed class ShardTeleporter : ITeleporter
             case Step.Choosing:
                 if (!MenuIsOpen())
                 {
-                    step = Step.Idle;
-                    RestoreTarget();
+                    Enter(Step.Confirming);
                     return;
                 }
 
                 if (!chosen)
                 {
                     chosen = true;
-                    Choose();
+
+                    if (!Choose())
+                    {
+                        Cancel();
+                        Abort();
+                    }
+                }
+
+                return;
+
+            case Step.Confirming:
+                confirmation.Accept();
+
+                if (DateTimeOffset.UtcNow - stepStartedAt > ConfirmationWindow)
+                {
+                    step = Step.Idle;
+                    RestoreTarget();
                 }
 
                 return;
@@ -167,12 +165,12 @@ public sealed class ShardTeleporter : ITeleporter
         system->InteractWithObject((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)shard.Address, false);
     }
 
-    private unsafe void Choose()
+    private unsafe bool Choose()
     {
         var addon = (AddonSelectString*)gameGui.GetAddonByName("SelectString").Address;
         if (addon == null)
         {
-            return;
+            return false;
         }
 
         ref var menu = ref addon->PopupMenu.PopupMenu;
@@ -185,12 +183,28 @@ public sealed class ShardTeleporter : ITeleporter
 
         if (index < 0)
         {
-            log.Information($"[shard] '{destination}' is not on the menu ({menu.EntryCount} entries).");
-            return;
+            log.Warning(
+                $"[shard] '{destination}' is not on the menu. Entries: {DescribeEntries(ref menu)}");
+            return false;
         }
 
         log.Information($"[shard] choosing entry {index} for '{destination}'.");
 
+        Answer(addon, index);
+        return true;
+    }
+
+    private unsafe void Cancel()
+    {
+        var addon = (AddonSelectString*)gameGui.GetAddonByName("SelectString").Address;
+        if (addon != null)
+        {
+            Answer(addon, -1);
+        }
+    }
+
+    private static unsafe void Answer(AddonSelectString* addon, int index)
+    {
         var choice = stackalloc AtkValue[1];
         choice->Type = AtkValueType.Int;
         choice->Int = index;
@@ -219,6 +233,44 @@ public sealed class ShardTeleporter : ITeleporter
         }
 
         return -1;
+    }
+
+    private string DescribeNearby()
+    {
+        if (playerPosition() is not { } here)
+        {
+            return "player position unknown";
+        }
+
+        var nearby = new List<(float Distance, string Text)>();
+        foreach (var candidate in objects)
+        {
+            var distance = Vector3.Distance(here, candidate.Position);
+            if (distance <= InteractRange * 3f)
+            {
+                nearby.Add((distance, $"{candidate.ObjectKind}:'{candidate.Name}'@{distance:F0}y"));
+            }
+        }
+
+        if (nearby.Count == 0)
+        {
+            return "nothing";
+        }
+
+        nearby.Sort((left, right) => left.Distance.CompareTo(right.Distance));
+        return string.Join(", ", nearby.ConvertAll(entry => entry.Text).GetRange(0, Math.Min(8, nearby.Count)));
+    }
+
+    private unsafe string DescribeEntries(ref PopupMenu menu)
+    {
+        var entries = new List<string>();
+        for (var i = 0; i < menu.EntryCount; i++)
+        {
+            var entry = menu.EntryNames[i];
+            entries.Add(entry.Value == null ? $"[{i}]<null>" : $"[{i}]'{entry.Value->ToString()}'");
+        }
+
+        return entries.Count == 0 ? "none" : string.Join(", ", entries);
     }
 
     private unsafe bool MenuIsOpen()

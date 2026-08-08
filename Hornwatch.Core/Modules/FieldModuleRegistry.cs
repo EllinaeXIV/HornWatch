@@ -3,14 +3,8 @@ using System.Collections.Generic;
 
 namespace Hornwatch.Core.Modules;
 
-public sealed class FieldModuleRegistry
+public sealed class FieldModuleRegistry(IReadOnlyList<IFieldModule> modules)
 {
-    private readonly IReadOnlyList<IFieldModule> modules;
-
-    public FieldModuleRegistry(IReadOnlyList<IFieldModule> modules)
-    {
-        this.modules = modules;
-    }
 
     public IReadOnlyList<IFieldModule> All => modules;
 
