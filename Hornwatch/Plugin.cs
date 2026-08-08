@@ -95,6 +95,7 @@ public sealed class Plugin : IDalamudPlugin
             new ReturnService(Svc.Condition),
             confirmation,
             () => modules.Capability<ITeleportNetwork>(),
+            () => modules.Capability<ITransportNetwork>(),
             () => Svc.Objects.LocalPlayer?.Position,
             () => Svc.ClientState.TerritoryType,
             IsEncounterStillActive,
@@ -115,11 +116,10 @@ public sealed class Plugin : IDalamudPlugin
 
         treasureWatcher = new TreasureSpottedWatcher(
             () => modules.Capability<ISpottedTreasureSource>(),
-            () => Svc.Objects.LocalPlayer?.Position,
             () => Svc.ClientState.TerritoryType,
             () => Svc.ClientState.MapId,
             () => Configuration.TreasureFor(Svc.ClientState.TerritoryType).Alerts,
-            localizer, Svc.Chat, Svc.Toasts, flagger);
+            localizer, Svc.Chat, Svc.Toasts, Svc.Data, flagger);
 
         treasureHunt = new TreasureHunt(
             Travel,

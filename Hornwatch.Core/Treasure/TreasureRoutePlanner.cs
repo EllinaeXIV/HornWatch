@@ -13,6 +13,8 @@ public sealed record TreasureRouteOptions
     public bool IncludeSilver { get; init; } = true;
 
     public bool ReturnToCampWhenDone { get; init; } = true;
+
+    public bool IncludeHostileAreas { get; init; }
 }
 
 public static class TreasureRoutePlanner

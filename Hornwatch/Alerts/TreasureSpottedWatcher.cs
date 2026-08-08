@@ -4,21 +4,23 @@ using System.Numerics;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
+using Dalamud.Utility;
 using Hornwatch.Core;
 using Hornwatch.Core.Localization;
 using Hornwatch.Core.Treasure;
+using LuminaMap = Lumina.Excel.Sheets.Map;
 
 namespace Hornwatch.Alerts;
 
 public sealed class TreasureSpottedWatcher(
     Func<ISpottedTreasureSource?> treasures,
-    Func<Vector3?> playerPosition,
     Func<uint> currentTerritory,
     Func<uint> currentMap,
     Func<TreasureAlertSettings> settings,
     ILocalizer localizer,
     IChatGui chat,
     IToastGui toasts,
+    IDataManager data,
     MapFlagger flagger)
 {
     private const ushort LinkForeground = 500;
@@ -77,12 +79,11 @@ public sealed class TreasureSpottedWatcher(
 
     private void Announce(SpottedTreasure treasure, TreasureAlertSettings options)
     {
-        var name = localizer.Get($"treasure.rarity.{treasure.Rarity}");
-        var distance = playerPosition() is { } here ? (int)Vector3.Distance(here, treasure.Position) : 0;
+        var found = localizer.Format("treasure.tag", localizer.Get($"treasure.rarity.{treasure.Rarity}"));
 
         if (options.Toast)
         {
-            toasts.ShowQuest(localizer.Format("treasure.foundToast", name, distance));
+            toasts.ShowQuest(found);
         }
 
         if (options.MapFlag)
@@ -92,21 +93,27 @@ public sealed class TreasureSpottedWatcher(
 
         if (options.ChatMessage)
         {
-            chat.Print(Message(treasure, name, distance));
+            chat.Print(Message(treasure, found));
         }
     }
 
-    private SeString Message(SpottedTreasure treasure, string name, int distance)
+    private SeString Message(SpottedTreasure treasure, string found)
     {
-        var link = new MapLinkPayload(
-            currentTerritory(), currentMap(), treasure.Position.X, treasure.Position.Z);
+        var mapId = currentMap();
+        var onMap = data.GetExcelSheet<LuminaMap>()?.GetRowOrDefault(mapId);
+
+        // MapLinkPayload's float constructor wants the coordinates a player reads off the screen,
+        // not world space. Handing it world space put the link a whole map away from the coffer.
+        var readable = onMap is { } row
+            ? MapUtil.WorldToMap(new Vector2(treasure.Position.X, treasure.Position.Z), row)
+            : new Vector2(treasure.Position.X, treasure.Position.Z);
+
+        var link = new MapLinkPayload(currentTerritory(), mapId, readable.X, readable.Y);
 
         return new SeStringBuilder()
             .AddUiForeground(45)
-            .AddText($"[{PluginMeta.Name}] ")
+            .AddText($"[{PluginMeta.Name} ({found})] ")
             .AddUiForegroundOff()
-            .AddText(localizer.Format("treasure.foundChat", name, distance))
-            .AddText(" ")
             .Add(link)
             .AddUiForeground(LinkForeground)
             .AddUiGlow(LinkGlow)

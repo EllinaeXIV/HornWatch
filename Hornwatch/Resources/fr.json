@@ -142,11 +142,9 @@
   "config.sectionTreasure": "Tresor",
   "treasure.showOverlay": "Afficher la barre de bascule sur la carte",
   "treasure.showOverlayHint": "La colonne de boutons au bord droit de la carte. Masque la barre, pas les marqueurs.",
-  "treasure.rarity.Bronze": "Coffre de bronze",
-  "treasure.rarity.Silver": "Coffre d'argent",
-  "treasure.rarity.Gold": "Coffre d'or",
-  "treasure.foundToast": "{0} repere - {1}y",
-  "treasure.foundChat": "{0} repere, a {1}y :",
+  "treasure.rarity.Bronze": "Bronze",
+  "treasure.rarity.Silver": "Argent",
+  "treasure.rarity.Gold": "Or",
   "treasure.alertsHint": "Annonce un coffre quand tu arrives a sa portee.",
   "treasure.flag": "Poser un drapeau dessus",
   "treasure.flagHint": "Sans ouvrir la carte. Cliquer la ligne de chat fait de meme.",
@@ -157,5 +155,8 @@
   "treasure.pause": "Pause",
   "treasure.resume": "Reprendre",
   "treasure.routeReturn": "Rapatriement au camp a la fin de l'itineraire",
-  "plugin.openSettings": "Ouvrir les reglages"
+  "plugin.openSettings": "Ouvrir les reglages",
+  "treasure.routeHostile": "Inclure les zones marquees letales",
+  "treasure.routeHostileHint": "Decoche par defaut. Ces zones tuent un trajet laisse sans surveillance ; ne l'active que si tu regardes.",
+  "treasure.tag": "Tresor {0}"
 }

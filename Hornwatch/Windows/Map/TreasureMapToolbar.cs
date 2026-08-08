@@ -98,6 +98,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
         if (handle != null)
         {
             handle.IsVisible = visible;
+            Paint(handle, expanded);
         }
 
         if (row != null)
@@ -171,9 +172,11 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
                 Size = new Vector2(ButtonSize),
                 Position = anchor,
                 IsVisible = overlayEnabled(),
-                IsChecked = expanded,
+                TextTooltip = localizer.Get("treasure.markers"),
             };
             handle.OnClick = ToggleExpanded;
+
+            Paint(handle, expanded);
 
             handle.AttachNode(&addon->AtkUnitBase, NodePosition.AsLastChild);
             row.AttachNode(&addon->AtkUnitBase, NodePosition.AsLastChild);
@@ -238,16 +241,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
     private void ToggleExpanded()
     {
         expanded = !expanded;
-
-        if (handle != null)
-        {
-            handle.IsChecked = expanded;
-        }
-
-        if (row != null)
-        {
-            row.IsVisible = expanded;
-        }
+        Sync();
     }
 
     private void Toggle(TreasureKind kind)

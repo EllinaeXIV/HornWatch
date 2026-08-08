@@ -23,7 +23,7 @@ public sealed class MapMarkers : IDisposable
         [TreasureKind.Survey] = 60357,
     };
 
-    private const uint NextWaypointIcon = 60442;
+    private const uint NextWaypointIcon = 60561;
 
     private readonly MapOverlayController overlay = new();
 

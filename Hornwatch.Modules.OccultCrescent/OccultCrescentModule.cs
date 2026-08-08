@@ -34,12 +34,14 @@ public sealed class OccultCrescentModule : FieldModuleBase
         var catalog = new PhantomJobCatalog(data, cache);
         var projection = new OccultMapProjection(data, cache, resolveGround, log);
         var pots = new PotCatalog(data, cache, projection);
+        var layers = new OccultMapLayers(data, cache);
+        var depths = new OccultDepths(layers);
 
         encounters = new OccultEncounterSource(
             fates, pots, new TowerCatalog(projection), currentTerritory);
         JobSource = new OccultJobSource(catalog, objects);
-        treasureSpotter = new OccultTreasureSpotter(objects, log);
-        hazards = new OccultHazardSource(objects, currentTerritory);
+        treasureSpotter = new OccultTreasureSpotter(objects, data, log);
+        hazards = new OccultHazardSource(objects, depths, currentTerritory);
         potTracker = new RespawnTracker(respawnStore, new PotRotationRule(pots), currentTerritory);
 
         Provide<IEncounterSource>(encounters);
@@ -47,7 +49,8 @@ public sealed class OccultCrescentModule : FieldModuleBase
         Provide<RespawnTracker>(potTracker);
         Provide<IGuideCatalog>(new OccultGuideCatalog(data, cache));
         Provide<ITeleportNetwork>(new OccultTeleportNetwork(currentTerritory));
-        Provide<ITreasureSource>(new OccultTreasureCatalog(resourceDirectory, new OccultMapLayers(data, cache), log));
+        Provide<ITransportNetwork>(new OccultTransportNetwork(currentTerritory));
+        Provide<ITreasureSource>(new OccultTreasureCatalog(resourceDirectory, layers, depths, log));
         Provide<ISpottedTreasureSource>(treasureSpotter);
         Provide<IHazardSource>(hazards);
     }

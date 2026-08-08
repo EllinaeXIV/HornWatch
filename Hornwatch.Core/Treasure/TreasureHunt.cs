@@ -31,6 +31,8 @@ public sealed class TreasureHunt(
 
     private const int MaximumApproachAttempts = 4;
 
+    private static readonly TimeSpan BetweenApproaches = TimeSpan.FromSeconds(2);
+
     private const float CofferPresenceRange = 15f;
 
     private const float SightRange = 50f;
@@ -55,6 +57,7 @@ public sealed class TreasureHunt(
     private DateTimeOffset standingOnCofferSince = DateTimeOffset.MaxValue;
     private DateTimeOffset legStartedAt = DateTimeOffset.MaxValue;
     private int approachAttempts;
+    private DateTimeOffset lastApproachAt = DateTimeOffset.MinValue;
 
     public HuntState State { get; private set; } = HuntState.Idle;
 
@@ -79,7 +82,7 @@ public sealed class TreasureHunt(
         this.options = options;
 
         route.Clear();
-        route.AddRange(TreasureRoutePlanner.Plan(points, from, options));
+        route.AddRange(TreasureRoutePlanner.Plan(Reachable(points, options), from, options));
 
         plannedFor = currentTerritory();
         index = 0;
@@ -138,6 +141,7 @@ public sealed class TreasureHunt(
         }
 
         State = HuntState.Idle;
+        index = 0;
         ForgetArrival();
         travel.Stop();
     }
@@ -147,6 +151,7 @@ public sealed class TreasureHunt(
         arrivedAt = DateTimeOffset.MaxValue;
         standingOnCofferSince = DateTimeOffset.MaxValue;
         approachAttempts = 0;
+        lastApproachAt = DateTimeOffset.MinValue;
     }
 
     public void Skip()
@@ -232,9 +237,15 @@ public sealed class TreasureHunt(
 
         if (toTarget <= ApproachRange && approachAttempts < MaximumApproachAttempts)
         {
+            if (DateTimeOffset.UtcNow - lastApproachAt < BetweenApproaches)
+            {
+                return;
+            }
+
+            lastApproachAt = DateTimeOffset.UtcNow;
             approachAttempts++;
             log.Information($"[hunt] {toTarget:F1}y short of coffer {index + 1} - closing in ({approachAttempts}).");
-            MoveOnto(aim);
+            MoveOnto(aim, standingOnGround: cofferHere != null);
             return;
         }
 
@@ -286,10 +297,43 @@ public sealed class TreasureHunt(
         }
 
         legStartedAt = DateTimeOffset.UtcNow;
-        MoveOnto(CofferNear(target.Position) ?? target.Position);
+
+        var coffer = CofferNear(target.Position);
+        MoveOnto(coffer ?? target.Position, standingOnGround: coffer != null);
     }
 
-    private void MoveOnto(Vector3 aim) => travel.TravelTo(aim, null, 0f, dismountOnArrival: false);
+    private void MoveOnto(Vector3 aim, bool standingOnGround) =>
+        travel.TravelTo(aim, null, 0f, dismountOnArrival: false, snapToGround: !standingOnGround);
+
+    private IReadOnlyList<TreasurePoint> Reachable(
+        IReadOnlyList<TreasurePoint> points, TreasureRouteOptions wanted)
+    {
+        if (wanted.IncludeHostileAreas || hazards() is not { } danger)
+        {
+            return points;
+        }
+
+        var kept = new List<TreasurePoint>(points.Count);
+        var dropped = 0;
+
+        foreach (var point in points)
+        {
+            if (danger.IsInHostileArea(point.Position))
+            {
+                dropped++;
+                continue;
+            }
+
+            kept.Add(point);
+        }
+
+        if (dropped > 0)
+        {
+            log.Information($"[hunt] {dropped} coffers left out: they sit in an area marked lethal.");
+        }
+
+        return kept;
+    }
 
     private Vector3? CofferNear(Vector3 waypoint)
     {

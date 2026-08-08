@@ -7,7 +7,7 @@ using Hornwatch.Core.Hazards;
 
 namespace Hornwatch.Modules.OccultCrescent;
 
-public sealed class OccultHazardSource(IObjectTable objects, Func<uint> currentTerritory) : IHazardSource
+public sealed class OccultHazardSource(IObjectTable objects, OccultDepths depths, Func<uint> currentTerritory) : IHazardSource
 {
     private static readonly Dictionary<uint, byte> ThresholdByTerritory = new()
     {
@@ -16,6 +16,8 @@ public sealed class OccultHazardSource(IObjectTable objects, Func<uint> currentT
     };
 
     private const byte NoThreshold = byte.MaxValue;
+
+    private const uint NoOwner = 0xE0000000;
 
     private readonly List<Hazard> active = [];
 
@@ -36,12 +38,12 @@ public sealed class OccultHazardSource(IObjectTable objects, Func<uint> currentT
 
         foreach (var candidate in objects)
         {
-            if (candidate is not IBattleNpc npc || npc.OwnerId != 0)
+            if (candidate is not IBattleNpc npc || npc.IsDead || npc.MaxHp == 0)
             {
                 continue;
             }
 
-            if (npc.IsDead || npc.MaxHp == 0 || npc.Level < threshold)
+            if (npc.OwnerId is not (0 or NoOwner) || npc.Level < threshold)
             {
                 continue;
             }
@@ -64,6 +66,17 @@ public sealed class OccultHazardSource(IObjectTable objects, Func<uint> currentT
 
         return found;
     }
+
+    public bool IsDangerous(Vector3 point, float radius) =>
+        IsUnderground(point) ||
+        OccultDangerAreas.IsHostileArea(currentTerritory(), point) ||
+        CountAround(point, radius) > 0;
+
+    public string? AreaNameAt(Vector3 point) => OccultDangerAreas.Around(currentTerritory(), point)?.Name;
+
+    public bool IsUnderground(Vector3 point) => depths.IsUnderground(currentTerritory(), point.Y);
+
+    public bool IsInHostileArea(Vector3 point) => OccultDangerAreas.IsHostileArea(currentTerritory(), point);
 
     public Hazard? ClosestTo(Vector3 point)
     {

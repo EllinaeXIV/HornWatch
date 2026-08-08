@@ -35,7 +35,9 @@ public interface ITravelService
 
     Vector3? LegDestination { get; }
 
-    void TravelTo(Vector3 destination, string? targetId = null, float? radius = null, bool dismountOnArrival = true);
+    void TravelTo(
+        Vector3 destination, string? targetId = null, float? radius = null,
+        bool dismountOnArrival = true, bool snapToGround = true);
 
     void ReturnToCamp();
 
@@ -51,6 +53,7 @@ public sealed class TravelCoordinator(
     IRecall recall,
     IConfirmationDialog confirmation,
     Func<ITeleportNetwork?> network,
+    Func<ITransportNetwork?> transport,
     Func<Vector3?> playerPosition,
     Func<uint> currentTerritory,
     Func<string, bool> targetIsActive,
@@ -140,6 +143,12 @@ public sealed class TravelCoordinator(
 
     private Vector3? mountedWalkToShard;
 
+    private Vector3? onwardDestination;
+    private string? onwardTargetId;
+    private float? onwardRadius;
+    private bool onwardDismount;
+    private bool onwardSnap;
+
     public TravelPhase Phase { get; private set; } = TravelPhase.Idle;
 
     public bool IsEnabled => travelEnabled();
@@ -159,7 +168,8 @@ public sealed class TravelCoordinator(
     public string? UnavailableReasonKey => pathfinder.UnavailableReasonKey;
 
     public void TravelTo(
-        Vector3 destination, string? targetId = null, float? radius = null, bool dismountOnArrival = true)
+        Vector3 destination, string? targetId = null, float? radius = null,
+        bool dismountOnArrival = true, bool snapToGround = true)
     {
         if (!IsAvailable)
         {
@@ -175,8 +185,24 @@ public sealed class TravelCoordinator(
         mountedWalkToShard = null;
         dismountOnApproach = dismountOnArrival;
 
-        finalDestination = pathfinder.SnapToGround(Dropzone(destination, radius));
+        var wanted = Dropzone(destination, radius);
+        finalDestination = snapToGround ? pathfinder.SnapToGround(wanted) : wanted;
         startedInTerritory = currentTerritory();
+
+        if (playerPosition() is { } standing &&
+            transport()?.StepTowards(standing, finalDestination) is { } pad)
+        {
+            log.Information($"[transport] '{pad.Name}' first, then on to the destination.");
+
+            onwardDestination = finalDestination;
+            onwardTargetId = targetId;
+            onwardRadius = radius;
+            onwardDismount = dismountOnArrival;
+            onwardSnap = snapToGround;
+
+            finalDestination = pathfinder.SnapToGround(pad.Entrance);
+            this.targetId = null;
+        }
 
         plannedTeleport = PlanTeleport(finalDestination);
         if (plannedTeleport == null)
@@ -186,6 +212,33 @@ public sealed class TravelCoordinator(
         }
 
         BeginBoarding();
+    }
+
+    // The pad moves the character without telling anyone. Nothing needs to know where it lands: the
+    // moment the region test stops asking for it, the crossing has happened and the trip re-plans
+    // from wherever that turned out to be.
+    private bool CarriedOnward()
+    {
+        if (onwardDestination is not { } onward || playerPosition() is not { } here)
+        {
+            return false;
+        }
+
+        if (transport()?.StepTowards(here, onward) != null)
+        {
+            return false;
+        }
+
+        log.Information("[transport] carried across - re-planning from where we landed.");
+
+        var targetIdAfter = onwardTargetId;
+        var radiusAfter = onwardRadius;
+        var dismountAfter = onwardDismount;
+        var snapAfter = onwardSnap;
+
+        onwardDestination = null;
+        TravelTo(onward, targetIdAfter, radiusAfter, dismountAfter, snapAfter);
+        return true;
     }
 
     public void ReturnToCamp()
@@ -206,6 +259,11 @@ public sealed class TravelCoordinator(
     public void Tick()
     {
         teleporter.Tick();
+
+        if (CarriedOnward())
+        {
+            return;
+        }
 
         if (Phase == TravelPhase.Idle)
         {
@@ -377,6 +435,7 @@ public sealed class TravelCoordinator(
         pathfinder.Stop();
         targetId = null;
         mountedWalkToShard = null;
+        onwardDestination = null;
         Phase = TravelPhase.Idle;
     }
 
@@ -400,15 +459,25 @@ public sealed class TravelCoordinator(
             return null;
         }
 
-        if (Horizontal(from.Value, destination) <= Horizontal(nearest.Position, destination))
+        var playerToDestination = Horizontal(from.Value, destination);
+        var shardToDestination = Horizontal(nearest.Position, destination);
+
+        if (playerToDestination <= shardToDestination)
         {
+            log.Information(
+                $"[plan] walking: {playerToDestination:F0}y to go, shard {nearest.PlaceNameId} is no closer ({shardToDestination:F0}y).");
             return null;
         }
 
         if (NearestShardWithinWalk() is { } boardable && Horizontal(boardable, nearest.Position) < SameShardRange)
         {
+            log.Information(
+                $"[plan] walking: shard {nearest.PlaceNameId} is the one we would board from.");
             return null;
         }
+
+        log.Information(
+            $"[plan] teleport to shard {nearest.PlaceNameId}: {playerToDestination:F0}y to go on foot, {shardToDestination:F0}y from that shard.");
 
         return nearest.PlaceNameId;
     }

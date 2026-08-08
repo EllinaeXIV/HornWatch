@@ -12,13 +12,11 @@ public sealed class OccultTreasureCatalog : ITreasureSource
 {
     private const string ResourceFile = "occult-treasures.json";
 
-    private const float SubterraneanCeiling = -70f;
-
     private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly Dictionary<uint, IReadOnlyList<TreasurePoint>> byTerritory = new();
 
-    public OccultTreasureCatalog(string resourceDirectory, OccultMapLayers layers, IPluginLog log)
+    public OccultTreasureCatalog(string resourceDirectory, OccultMapLayers layers, OccultDepths depths, IPluginLog log)
     {
         var path = Path.Combine(resourceDirectory, ResourceFile);
 
@@ -38,7 +36,7 @@ public sealed class OccultTreasureCatalog : ITreasureSource
                     continue;
                 }
 
-                byTerritory[territoryId] = Convert(points, territoryId, layers.Of(territoryId), log);
+                byTerritory[territoryId] = Convert(points, territoryId, layers.Of(territoryId), depths, log);
             }
         }
         catch (Exception ex)
@@ -51,7 +49,7 @@ public sealed class OccultTreasureCatalog : ITreasureSource
         byTerritory.TryGetValue(territoryId, out var points) ? points : [];
 
     private static IReadOnlyList<TreasurePoint> Convert(
-        List<RawPoint> points, uint territoryId, MapLayers layers, IPluginLog log)
+        List<RawPoint> points, uint territoryId, MapLayers layers, OccultDepths depths, IPluginLog log)
     {
         var converted = new List<TreasurePoint>(points.Count);
         var unknownKinds = new HashSet<string>();
@@ -64,7 +62,7 @@ public sealed class OccultTreasureCatalog : ITreasureSource
                 continue;
             }
 
-            var underground = layers.Underground != null && point.Y < SubterraneanCeiling;
+            var underground = depths.IsUnderground(territoryId, point.Y);
 
             converted.Add(new TreasurePoint(
                 kind,

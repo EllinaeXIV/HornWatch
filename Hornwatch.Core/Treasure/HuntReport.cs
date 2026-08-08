@@ -11,6 +11,7 @@ public sealed class HuntReport
 
     private readonly Dictionary<string, int> outcomes = [];
     private readonly HashSet<ulong> hazardsBrushed = [];
+    private readonly HashSet<string> areasEntered = [];
 
     private DateTimeOffset startedAt;
     private Vector3? lastPosition;
@@ -26,6 +27,7 @@ public sealed class HuntReport
     {
         outcomes.Clear();
         hazardsBrushed.Clear();
+        areasEntered.Clear();
 
         startedAt = DateTimeOffset.UtcNow;
         lastPosition = null;
@@ -63,6 +65,16 @@ public sealed class HuntReport
             if (hazards != null)
             {
                 Watch(hazards, at);
+
+                if (hazards.AreaNameAt(at) is { } area)
+                {
+                    areasEntered.Add(area);
+                }
+
+                if (hazards.IsUnderground(at))
+                {
+                    areasEntered.Add("subterrane");
+                }
             }
         }
     }
@@ -106,7 +118,8 @@ public sealed class HuntReport
         return $"[run] {visited}/{planned} coffers in {elapsed:mm\\:ss}, {WalkedYalms:F0}y walked, " +
                $"{inCombat:mm\\:ss} in combat | {string.Join(", ", breakdown)} | " +
                $"hazards (level {dangerousFromLevel}+) brushed within {BrushRange:F0}y: " +
-               $"{hazardsBrushed.Count}, highest level {highestHazardLevel}, closest {closest}";
+               $"{hazardsBrushed.Count}, highest level {highestHazardLevel}, closest {closest} | " +
+               $"marked areas entered: {(areasEntered.Count == 0 ? "none" : string.Join(", ", areasEntered))}";
     }
 
     private static float Ground(Vector3 a, Vector3 b)

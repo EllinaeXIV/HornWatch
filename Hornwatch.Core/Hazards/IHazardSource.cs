@@ -14,4 +14,12 @@ public interface IHazardSource
     int CountAround(Vector3 point, float radius);
 
     Hazard? ClosestTo(Vector3 point);
+
+    bool IsDangerous(Vector3 point, float radius);
+
+    bool IsUnderground(Vector3 point);
+
+    bool IsInHostileArea(Vector3 point);
+
+    string? AreaNameAt(Vector3 point);
 }

@@ -64,6 +64,15 @@ public sealed class TreasureTab(FieldModuleRegistry modules, ILocalizer localize
 
         ImGui.TextWrapped(localizer.Get("treasure.routeUndergroundHint"));
 
+        var hostile = options.IncludeHostileAreas;
+        if (ImGui.Checkbox(localizer.Get("treasure.routeHostile"), ref hostile))
+        {
+            zone.Route = options with { IncludeHostileAreas = hostile };
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("treasure.routeHostileHint"));
+
         var returnWhenDone = options.ReturnToCampWhenDone;
         if (ImGui.Checkbox(localizer.Get("treasure.routeReturn"), ref returnWhenDone))
         {

@@ -142,11 +142,9 @@
   "config.sectionTreasure": "Treasure",
   "treasure.showOverlay": "Show the toggle strip on the map",
   "treasure.showOverlayHint": "The button column on the map's right edge. Hides the strip, not the markers.",
-  "treasure.rarity.Bronze": "Bronze coffer",
-  "treasure.rarity.Silver": "Silver coffer",
-  "treasure.rarity.Gold": "Gold coffer",
-  "treasure.foundToast": "{0} spotted - {1}y",
-  "treasure.foundChat": "{0} spotted, {1}y away:",
+  "treasure.rarity.Bronze": "Bronze",
+  "treasure.rarity.Silver": "Silver",
+  "treasure.rarity.Gold": "Gold",
   "treasure.alertsHint": "Announces a coffer when you come within range of it.",
   "treasure.flag": "Place a map flag on it",
   "treasure.flagHint": "Without opening the map. Clicking the chat line does the same.",
@@ -157,5 +155,8 @@
   "treasure.pause": "Pause",
   "treasure.resume": "Resume",
   "treasure.routeReturn": "Return to camp when the route is finished",
-  "plugin.openSettings": "Open the settings"
+  "plugin.openSettings": "Open the settings",
+  "treasure.routeHostile": "Include the areas marked lethal",
+  "treasure.routeHostileHint": "Off by default. Those areas killed an unattended run; leave this on only while you are watching.",
+  "treasure.tag": "Treasure {0}"
 }
