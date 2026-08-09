@@ -39,11 +39,13 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     private const uint HandleIcon = 60442;
 
-    private const float ButtonSize = 44f;
+    private const float LargestButtonSize = 44f;
 
-    private const float Margin = 4f;
+    private const float SmallestButtonSize = 28f;
 
-    private const float EdgeInset = 14f;
+    private const float Margin = 3f;
+
+    private const float EdgeInset = 12f;
 
     private readonly AddonController<AddonAreaMap> controller;
 
@@ -56,9 +58,11 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     private readonly Dictionary<TreasureKind, IconButtonNode> buttons = new();
 
+    private AddonAreaMap* map;
     private IconButtonNode? handle;
     private VerticalListNode? row;
     private bool expanded = true;
+    private Vector4 lastFrame;
 
     public TreasureMapToolbar(
         IFramework framework,
@@ -93,6 +97,8 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     public void Sync()
     {
+        FollowFrame();
+
         var visible = overlayEnabled();
 
         if (handle != null)
@@ -135,13 +141,9 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
         try
         {
-            var anchor = AnchorFrom(addon);
-
             row = new VerticalListNode
             {
                 ItemSpacing = Margin,
-                Size = new Vector2(ButtonSize, ((ButtonSize + Margin) * Order.Length) - Margin),
-                Position = anchor + new Vector2(0f, ButtonSize + Margin),
                 IsVisible = overlayEnabled() && expanded,
             };
 
@@ -152,7 +154,6 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
                 var button = new IconButtonNode
                 {
                     IconId = Icons[kind],
-                    Size = new Vector2(ButtonSize),
                     IsVisible = true,
                     TextTooltip = localizer.Get($"treasure.kind.{kind}"),
                 };
@@ -169,8 +170,6 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
             handle = new IconButtonNode
             {
                 IconId = HandleIcon,
-                Size = new Vector2(ButtonSize),
-                Position = anchor,
                 IsVisible = overlayEnabled(),
                 TextTooltip = localizer.Get("treasure.markers"),
             };
@@ -181,7 +180,13 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
             handle.AttachNode(&addon->AtkUnitBase, NodePosition.AsLastChild);
             row.AttachNode(&addon->AtkUnitBase, NodePosition.AsLastChild);
 
-            log.Information($"[toolbar] attached to the map with {buttons.Count} category buttons.");
+            map = addon;
+            Layout(addon);
+
+            log.Information(
+                $"[toolbar] attached to the map with {buttons.Count} category buttons, " +
+                $"anchor {handle.Position.X:0}/{handle.Position.Y:0} of {handle.Size.X:0}px " +
+                $"in a frame of {lastFrame.Z:0}x{lastFrame.W:0} at {lastFrame.X:0}/{lastFrame.Y:0}.");
         }
         catch (Exception ex)
         {
@@ -190,7 +195,56 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
         }
     }
 
-    private static unsafe Vector2 AnchorFrom(AddonAreaMap* addon)
+    private void FollowFrame()
+    {
+        if (map == null || handle == null || row == null)
+        {
+            return;
+        }
+
+        var frame = FrameOf(map);
+
+        if (new Vector4(frame.X, frame.Y, frame.Width, frame.Height) != lastFrame)
+        {
+            Layout(map);
+        }
+    }
+
+    private unsafe void Layout(AddonAreaMap* addon)
+    {
+        if (handle == null || row == null)
+        {
+            return;
+        }
+
+        var frame = FrameOf(addon);
+        var buttonSize = ButtonSizeWithin(frame.Height);
+        var anchor = AnchorFrom(addon, frame, buttonSize);
+
+        handle.Size = new Vector2(buttonSize);
+        handle.Position = anchor;
+
+        foreach (var button in buttons.Values)
+        {
+            button.Size = new Vector2(buttonSize);
+        }
+
+        row.Size = new Vector2(buttonSize, ((buttonSize + Margin) * Order.Length) - Margin);
+        row.Position = anchor + new Vector2(0f, buttonSize + Margin);
+        row.RecalculateLayout();
+
+        lastFrame = new Vector4(frame.X, frame.Y, frame.Width, frame.Height);
+    }
+
+    private static float ButtonSizeWithin(float frameHeight)
+    {
+        var fitting = ((frameHeight - (EdgeInset * 2f) + Margin) / (Order.Length + 1)) - Margin;
+
+        return Math.Clamp(fitting, SmallestButtonSize, LargestButtonSize);
+    }
+
+    private static unsafe Vector2 AnchorFrom(
+        AddonAreaMap* addon, (float X, float Y, float Width, float Height) frame, float buttonSize)
     {
         var y = Margin;
 
@@ -215,15 +269,39 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
             y = addon->TitleContainerNode->Y + addon->TitleContainerNode->Height;
         }
 
-        var x = addon->AtkUnitBase.GetScaledWidth(true) - ButtonSize - EdgeInset;
+        var columnHeight = ((buttonSize + Margin) * (Order.Length + 1)) - Margin;
+        var lowestTop = frame.Y + frame.Height - EdgeInset - columnHeight;
+        var x = frame.X + frame.Width - buttonSize - EdgeInset;
 
-        return new Vector2(MathF.Max(Margin, x), y + Margin);
+        return new Vector2(
+            MathF.Max(Margin, x),
+            MathF.Max(frame.Y + Margin, MathF.Min(frame.Y + y + Margin, lowestTop)));
+    }
+
+    private static unsafe (float X, float Y, float Width, float Height) FrameOf(AddonAreaMap* addon)
+    {
+        if (addon->WindowNode != null)
+        {
+            var node = &addon->WindowNode->AtkResNode;
+
+            if (node->Width > 0 && node->Height > 0)
+            {
+                return (node->X, node->Y, node->Width * node->ScaleX, node->Height * node->ScaleY);
+            }
+        }
+
+        return (0f, 0f,
+            addon->AtkUnitBase.GetScaledWidth(false),
+            addon->AtkUnitBase.GetScaledHeight(false));
     }
 
     private unsafe void Teardown(AddonAreaMap* addon) => Release();
 
     private void Release()
     {
+        map = null;
+        lastFrame = default;
+
         foreach (var button in buttons.Values)
         {
             button.Dispose();

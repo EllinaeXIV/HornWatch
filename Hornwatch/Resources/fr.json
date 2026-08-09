@@ -158,5 +158,5 @@
   "plugin.openSettings": "Ouvrir les reglages",
   "treasure.routeHostile": "Inclure les zones marquees letales",
   "treasure.routeHostileHint": "Decoche par defaut. Ces zones tuent un trajet laisse sans surveillance ; ne l'active que si tu regardes.",
-  "treasure.tag": "Tresor {0}"
+  "treasure.tag": "Tresor"
 }

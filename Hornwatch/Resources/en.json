@@ -158,5 +158,5 @@
   "plugin.openSettings": "Open the settings",
   "treasure.routeHostile": "Include the areas marked lethal",
   "treasure.routeHostileHint": "Off by default. Those areas killed an unattended run; leave this on only while you are watching.",
-  "treasure.tag": "Treasure {0}"
+  "treasure.tag": "Treasure"
 }

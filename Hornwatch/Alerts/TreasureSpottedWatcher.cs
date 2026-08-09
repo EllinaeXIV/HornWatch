@@ -25,6 +25,14 @@ public sealed class TreasureSpottedWatcher(
 {
     private const ushort LinkForeground = 500;
     private const ushort LinkGlow = 501;
+    private const ushort TagForeground = 45;
+
+    private static readonly Dictionary<TreasureRarity, ushort> RarityForeground = new()
+    {
+        [TreasureRarity.Bronze] = 752,
+        [TreasureRarity.Silver] = 2,
+        [TreasureRarity.Gold] = 548,
+    };
 
     private readonly Dictionary<ulong, DateTimeOffset> seen = new();
 
@@ -79,11 +87,15 @@ public sealed class TreasureSpottedWatcher(
 
     private void Announce(SpottedTreasure treasure, TreasureAlertSettings options)
     {
-        var found = localizer.Format("treasure.tag", localizer.Get($"treasure.rarity.{treasure.Rarity}"));
+        var link = LinkTo(treasure);
 
         if (options.Toast)
         {
-            toasts.ShowQuest(found);
+            toasts.ShowQuest(new SeStringBuilder()
+                .AddText($"{localizer.Get("treasure.tag")} ")
+                .Append(Rarity(treasure.Rarity))
+                .AddText($" {link.PlaceName}{link.CoordinateString}")
+                .Build());
         }
 
         if (options.MapFlag)
@@ -93,26 +105,37 @@ public sealed class TreasureSpottedWatcher(
 
         if (options.ChatMessage)
         {
-            chat.Print(Message(treasure, found));
+            chat.Print(Message(treasure, link));
         }
     }
 
-    private SeString Message(SpottedTreasure treasure, string found)
+    private SeString Rarity(TreasureRarity rarity) =>
+        new SeStringBuilder()
+            .AddUiForeground(RarityForeground[rarity])
+            .AddText($"[{localizer.Get($"treasure.rarity.{rarity}")}]")
+            .AddUiForegroundOff()
+            .Build();
+
+    private MapLinkPayload LinkTo(SpottedTreasure treasure)
     {
         var mapId = currentMap();
         var onMap = data.GetExcelSheet<LuminaMap>()?.GetRowOrDefault(mapId);
 
-        // MapLinkPayload's float constructor wants the coordinates a player reads off the screen,
-        // not world space. Handing it world space put the link a whole map away from the coffer.
         var readable = onMap is { } row
             ? MapUtil.WorldToMap(new Vector2(treasure.Position.X, treasure.Position.Z), row)
             : new Vector2(treasure.Position.X, treasure.Position.Z);
 
-        var link = new MapLinkPayload(currentTerritory(), mapId, readable.X, readable.Y);
+        return new MapLinkPayload(currentTerritory(), mapId, readable.X, readable.Y);
+    }
 
-        return new SeStringBuilder()
-            .AddUiForeground(45)
-            .AddText($"[{PluginMeta.Name} ({found})] ")
+    private SeString Message(SpottedTreasure treasure, MapLinkPayload link) =>
+        new SeStringBuilder()
+            .AddUiForeground(TagForeground)
+            .AddText($"[{PluginMeta.Name} ({localizer.Get("treasure.tag")} ")
+            .AddUiForegroundOff()
+            .Append(Rarity(treasure.Rarity))
+            .AddUiForeground(TagForeground)
+            .AddText(")] ")
             .AddUiForegroundOff()
             .Add(link)
             .AddUiForeground(LinkForeground)
@@ -122,5 +145,4 @@ public sealed class TreasureSpottedWatcher(
             .AddUiForegroundOff()
             .Add(RawPayload.LinkTerminator)
             .Build();
-    }
 }
