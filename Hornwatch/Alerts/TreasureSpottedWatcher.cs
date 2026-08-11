@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
@@ -87,15 +88,11 @@ public sealed class TreasureSpottedWatcher(
 
     private void Announce(SpottedTreasure treasure, TreasureAlertSettings options)
     {
-        var link = LinkTo(treasure);
+        var message = Message(treasure, LinkTo(treasure));
 
         if (options.Toast)
         {
-            toasts.ShowQuest(new SeStringBuilder()
-                .AddText($"{localizer.Get("treasure.tag")} ")
-                .Append(Rarity(treasure.Rarity))
-                .AddText($" {link.PlaceName}{link.CoordinateString}")
-                .Build());
+            toasts.ShowQuest(message);
         }
 
         if (options.MapFlag)
@@ -105,7 +102,7 @@ public sealed class TreasureSpottedWatcher(
 
         if (options.ChatMessage)
         {
-            chat.Print(Message(treasure, link));
+            chat.Print(message);
         }
     }
 
@@ -140,7 +137,7 @@ public sealed class TreasureSpottedWatcher(
             .Add(link)
             .AddUiForeground(LinkForeground)
             .AddUiGlow(LinkGlow)
-            .AddText($"{link.PlaceName}{link.CoordinateString}")
+            .AddText($"{(char)SeIconChar.LinkMarker}{link.PlaceName}{link.CoordinateString}")
             .AddUiGlowOff()
             .AddUiForegroundOff()
             .Add(RawPayload.LinkTerminator)
