@@ -12,17 +12,6 @@ namespace Hornwatch.Windows.Map;
 
 public sealed class MapMarkers : IDisposable
 {
-    private static readonly Dictionary<TreasureKind, uint> Icons = new()
-    {
-        [TreasureKind.BronzeCoffer] = 60356,
-        [TreasureKind.SilverCoffer] = 60355,
-        [TreasureKind.PotNorth] = 60354,
-        [TreasureKind.PotSouth] = 60354,
-        [TreasureKind.SecondChance] = 61473,
-        [TreasureKind.Bunny] = 25207,
-        [TreasureKind.Survey] = 60357,
-    };
-
     private const uint NextWaypointIcon = 60561;
 
     private readonly MapOverlayController overlay = new();
@@ -133,7 +122,7 @@ public sealed class MapMarkers : IDisposable
                 AllowAnyMap = false,
                 MapId = route[i].MapId,
                 Position = new Vector2(route[i].Position.X, route[i].Position.Z),
-                IconId = i == routeIndex() ? NextWaypointIcon : Icons[route[i].Kind],
+                IconId = i == routeIndex() ? NextWaypointIcon : TreasureVisuals.IconOf(route[i].Kind),
             });
 
             placed++;
@@ -155,7 +144,9 @@ public sealed class MapMarkers : IDisposable
 
         foreach (var point in source.PointsIn(territory))
         {
-            if (!kinds.Contains(point.Kind) || !Icons.TryGetValue(point.Kind, out var icon))
+            var icon = TreasureVisuals.IconOf(point.Kind);
+
+            if (icon == 0 || !kinds.Contains(point.Kind))
             {
                 continue;
             }

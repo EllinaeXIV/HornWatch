@@ -115,7 +115,7 @@ public sealed class TreasureSpottedWatcher(
 
     private MapLinkPayload LinkTo(SpottedTreasure treasure)
     {
-        var mapId = currentMap();
+        var mapId = treasure.MapId != 0 ? treasure.MapId : currentMap();
         var onMap = data.GetExcelSheet<LuminaMap>()?.GetRowOrDefault(mapId);
 
         var readable = onMap is { } row

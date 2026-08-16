@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -10,5 +11,5 @@ public interface ITeleportNetwork
 {
     IReadOnlyList<ZoneTeleportPoint> Points { get; }
 
-    ZoneTeleportPoint? NearestTo(Vector3 destination);
+    ZoneTeleportPoint? NearestTo(Vector3 destination, Func<ZoneTeleportPoint, bool>? usable = null);
 }

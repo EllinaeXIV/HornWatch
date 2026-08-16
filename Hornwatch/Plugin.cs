@@ -39,6 +39,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly TreasureMapToolbar treasureToolbar;
     private readonly TreasureHunt treasureHunt;
     private readonly RouteOverlay routeOverlay;
+    private readonly NextPotBarEntry potBar;
+    private readonly SelectYesnoConfirmer confirmation;
 
     private readonly WindowSystem windowSystem = new(PluginMeta.InternalName);
     private readonly MainWindow mainWindow;
@@ -78,12 +80,19 @@ public sealed class Plugin : IDalamudPlugin
                 Svc.Data, Svc.Objects, Svc.Fates, cache, respawnStore,
                 resourceDirectory, Svc.Log,
                 () => Svc.ClientState.TerritoryType,
-                pathfinder.GroundLevelAt),
+                pathfinder.GroundLevelAt,
+                () => Configuration.AutoTravelEnabled && Configuration.AutoTravelRiskAcknowledged),
         ]);
 
-        var confirmation = new SelectYesnoConfirmer(Svc.GameGui, Svc.Data, Svc.Log);
+        TravelCoordinator? coordinator = null;
 
-        Travel = new TravelCoordinator(
+        confirmation = new SelectYesnoConfirmer(
+            Svc.GameGui, Svc.Data,
+            Svc.AddonLifecycle,
+            () => coordinator is { Phase: not TravelPhase.Idle },
+            Svc.Log);
+
+        coordinator = new TravelCoordinator(
             pathfinder,
             new FirstWorkingTeleporter(
                 new LifestreamTeleporter(PluginInterface, installed, Svc.Data, Svc.Log),
@@ -106,6 +115,8 @@ public sealed class Plugin : IDalamudPlugin
             new JumpService(),
             Svc.Log);
 
+        Travel = coordinator;
+
         alertPlayer = new AlertPlayer(
             Configuration, localizer, Svc.Chat,
             () => modules.Active?.Key,
@@ -125,6 +136,7 @@ public sealed class Plugin : IDalamudPlugin
             Travel,
             () => modules.Capability<ISpottedTreasureSource>(),
             () => modules.Capability<IHazardSource>(),
+            () => modules.Capability<ITreasureSurvey>(),
             () => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat],
             () => Svc.Objects.LocalPlayer?.Position,
             () => Svc.ClientState.TerritoryType,
@@ -141,6 +153,7 @@ public sealed class Plugin : IDalamudPlugin
 
         treasureToolbar = new TreasureMapToolbar(
             Svc.Framework,
+            Svc.GameGui,
             localizer,
             () => modules.Capability<ITreasureSource>() != null
                   && Configuration.TreasureFor(Svc.ClientState.TerritoryType).ShowToolbar,
@@ -156,6 +169,12 @@ public sealed class Plugin : IDalamudPlugin
         var theme = new ThemeManager(Svc.Data, Svc.GameConfig, cache, Configuration);
 
         mainWindow = new MainWindow(this, modules, localizer, Travel, flagger, treasureHunt, theme);
+
+        potBar = new NextPotBarEntry(
+            Svc.ServerBar, modules, localizer,
+            () => Configuration.ShowPotBarEntry,
+            () => mainWindow.Reveal(MainWindow.WatchTabKey));
+
         configWindow = new ConfigWindow(this, localizer, modules, new MountCatalog(Svc.Data, cache), installed,
             SetTreasureMarkerShown, SetTreasureOverlayShown, theme);
         windowSystem.AddWindow(mainWindow);
@@ -193,8 +212,10 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
 
         alertEngine.Appeared -= alertPlayer.Handle;
+        confirmation.Dispose();
 
         treasureHunt.Stop();
+        potBar.Dispose();
         treasureToolbar.Dispose();
         mapMarkers.Dispose();
         KamiToolKitLibrary.Dispose();
@@ -221,6 +242,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         treasureToolbar.Sync();
+        potBar.Refresh();
 
         var active = modules.Active;
         if (active == null)

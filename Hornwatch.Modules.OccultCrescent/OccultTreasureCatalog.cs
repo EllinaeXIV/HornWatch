@@ -12,6 +12,10 @@ public sealed class OccultTreasureCatalog : ITreasureSource
 {
     private const string ResourceFile = "occult-treasures.json";
 
+    private const long LargestSensibleFile = 1024 * 1024;
+
+    private const int MostPointsPerZone = 2000;
+
     private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly Dictionary<uint, IReadOnlyList<TreasurePoint>> byTerritory = new();
@@ -22,6 +26,13 @@ public sealed class OccultTreasureCatalog : ITreasureSource
 
         try
         {
+            if (new FileInfo(path) is { Exists: true, Length: > LargestSensibleFile } oversized)
+            {
+                log.Error(
+                    $"{ResourceFile} is {oversized.Length / 1024}KB, far past anything this catalogue should be; refusing to read it.");
+                return;
+            }
+
             var raw = JsonSerializer.Deserialize<Dictionary<string, List<RawPoint>>>(File.ReadAllText(path), ReadOptions);
             if (raw == null)
             {
@@ -33,6 +44,12 @@ public sealed class OccultTreasureCatalog : ITreasureSource
             {
                 if (!uint.TryParse(territory, out var territoryId))
                 {
+                    continue;
+                }
+
+                if (points.Count > MostPointsPerZone)
+                {
+                    log.Error($"Territory {territory} lists {points.Count} treasure points; ignoring the whole zone.");
                     continue;
                 }
 

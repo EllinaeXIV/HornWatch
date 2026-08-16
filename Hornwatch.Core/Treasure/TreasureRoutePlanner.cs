@@ -15,6 +15,10 @@ public sealed record TreasureRouteOptions
     public bool ReturnToCampWhenDone { get; init; } = true;
 
     public bool IncludeHostileAreas { get; init; }
+
+    public bool SightedOnly { get; init; }
+
+    public bool SweepWhileWalking { get; init; }
 }
 
 public static class TreasureRoutePlanner
@@ -76,7 +80,7 @@ public static class TreasureRoutePlanner
 
             for (var i = 0; i < remaining.Count; i++)
             {
-                var distance = Ground(at, remaining[i].Position);
+                var distance = at.GroundDistanceTo(remaining[i].Position);
                 if (distance < bestDistance)
                 {
                     bestDistance = distance;
@@ -102,9 +106,9 @@ public static class TreasureRoutePlanner
             {
                 for (var j = i + 1; j < route.Count; j++)
                 {
-                    var before = LegBefore(route, i, from) + Ground(route[j].Position, NextAfter(route, j));
-                    var after = Ground(PreviousOf(route, i, from), route[j].Position)
-                                + Ground(route[i].Position, NextAfter(route, j));
+                    var before = LegBefore(route, i, from) + route[j].Position.GroundDistanceTo(NextAfter(route, j));
+                    var after = PreviousOf(route, i, from).GroundDistanceTo(route[j].Position)
+                                + route[i].Position.GroundDistanceTo(NextAfter(route, j));
 
                     if (after >= before - 0.01f)
                     {
@@ -124,18 +128,11 @@ public static class TreasureRoutePlanner
     }
 
     private static float LegBefore(List<TreasurePoint> route, int index, Vector3 from) =>
-        Ground(PreviousOf(route, index, from), route[index].Position);
+        PreviousOf(route, index, from).GroundDistanceTo(route[index].Position);
 
     private static Vector3 PreviousOf(List<TreasurePoint> route, int index, Vector3 from) =>
         index == 0 ? from : route[index - 1].Position;
 
     private static Vector3 NextAfter(List<TreasurePoint> route, int index) =>
         index + 1 < route.Count ? route[index + 1].Position : route[index].Position;
-
-    private static float Ground(Vector3 a, Vector3 b)
-    {
-        var dx = a.X - b.X;
-        var dz = a.Z - b.Z;
-        return MathF.Sqrt((dx * dx) + (dz * dz));
-    }
 }

@@ -10,7 +10,10 @@ namespace Hornwatch.Modules.OccultCrescent;
 public sealed class OccultMapProjection(
     IDataManager data, IDataCache cache, Func<Vector3, Vector3> resolveGround, IPluginLog log)
 {
+    private static readonly TimeSpan BetweenProbes = TimeSpan.FromSeconds(5);
+
     private readonly Dictionary<(uint Territory, float MapX, float MapY), Vector3> grounded = new();
+    private readonly Dictionary<(uint Territory, float MapX, float MapY), DateTimeOffset> probedAt = new();
 
     public Vector3? ToWorld(uint territoryId, float mapX, float mapY)
     {
@@ -25,6 +28,13 @@ public sealed class OccultMapProjection(
             return known;
         }
 
+        if (probedAt.TryGetValue(key, out var last) && DateTimeOffset.UtcNow - last < BetweenProbes)
+        {
+            return null;
+        }
+
+        probedAt[key] = DateTimeOffset.UtcNow;
+
         var column = new Vector3(
             Axis(mapX, projection.Factor, projection.OffsetX),
             0f,
@@ -32,11 +42,13 @@ public sealed class OccultMapProjection(
 
         var ground = resolveGround(column);
 
-        if (ground != column)
+        if (ground == column)
         {
-            grounded[key] = ground;
-            log.Information($"[map] {mapX:F1}/{mapY:F1} in territory {territoryId} is world {ground}.");
+            return null;
         }
+
+        grounded[key] = ground;
+        log.Information($"[map] {mapX:F1}/{mapY:F1} in territory {territoryId} is world {ground}.");
 
         return ground;
     }

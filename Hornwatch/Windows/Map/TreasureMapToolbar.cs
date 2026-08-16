@@ -15,28 +15,6 @@ namespace Hornwatch.Windows.Map;
 
 public sealed unsafe class TreasureMapToolbar : IDisposable
 {
-    private static readonly TreasureKind[] Order =
-    [
-        TreasureKind.BronzeCoffer,
-        TreasureKind.SilverCoffer,
-        TreasureKind.PotNorth,
-        TreasureKind.PotSouth,
-        TreasureKind.SecondChance,
-        TreasureKind.Bunny,
-        TreasureKind.Survey,
-    ];
-
-    private static readonly Dictionary<TreasureKind, uint> Icons = new()
-    {
-        [TreasureKind.BronzeCoffer] = 60356,
-        [TreasureKind.SilverCoffer] = 60355,
-        [TreasureKind.PotNorth] = 60354,
-        [TreasureKind.PotSouth] = 60354,
-        [TreasureKind.SecondChance] = 61473,
-        [TreasureKind.Bunny] = 25207,
-        [TreasureKind.Survey] = 60357,
-    };
-
     private const uint HandleIcon = 60442;
 
     private const float LargestButtonSize = 44f;
@@ -47,9 +25,12 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     private const float EdgeInset = 12f;
 
+    private const string MapAddonName = "AreaMap";
+
     private readonly AddonController<AddonAreaMap> controller;
 
     private readonly IFramework framework;
+    private readonly IGameGui gameGui;
     private readonly ILocalizer localizer;
     private readonly Func<bool> overlayEnabled;
     private readonly Func<IReadOnlySet<TreasureKind>> shownKinds;
@@ -58,7 +39,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     private readonly Dictionary<TreasureKind, IconButtonNode> buttons = new();
 
-    private AddonAreaMap* map;
+    private bool attached;
     private IconButtonNode? handle;
     private VerticalListNode? row;
     private bool expanded = true;
@@ -66,6 +47,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     public TreasureMapToolbar(
         IFramework framework,
+        IGameGui gameGui,
         ILocalizer localizer,
         Func<bool> overlayEnabled,
         Func<IReadOnlySet<TreasureKind>> shownKinds,
@@ -73,6 +55,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
         IPluginLog log)
     {
         this.framework = framework;
+        this.gameGui = gameGui;
         this.localizer = localizer;
         this.overlayEnabled = overlayEnabled;
         this.shownKinds = shownKinds;
@@ -81,7 +64,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
         controller = new AddonController<AddonAreaMap>
         {
-            AddonName = "AreaMap",
+            AddonName = MapAddonName,
             OnSetup = Build,
             OnFinalize = Teardown,
         };
@@ -149,11 +132,11 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
             var kinds = shownKinds();
 
-            foreach (var kind in Order)
+            foreach (var kind in TreasureVisuals.Order)
             {
                 var button = new IconButtonNode
                 {
-                    IconId = Icons[kind],
+                    IconId = TreasureVisuals.IconOf(kind),
                     IsVisible = true,
                     TextTooltip = localizer.Get($"treasure.kind.{kind}"),
                 };
@@ -180,7 +163,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
             handle.AttachNode(&addon->AtkUnitBase, NodePosition.AsLastChild);
             row.AttachNode(&addon->AtkUnitBase, NodePosition.AsLastChild);
 
-            map = addon;
+            attached = true;
             Layout(addon);
 
             log.Information(
@@ -195,18 +178,36 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
         }
     }
 
+    private AddonAreaMap* LiveMap()
+    {
+        if (!attached)
+        {
+            return null;
+        }
+
+        var addon = (AddonAreaMap*)gameGui.GetAddonByName(MapAddonName).Address;
+
+        return addon != null && addon->AtkUnitBase.RootNode != null ? addon : null;
+    }
+
     private void FollowFrame()
     {
-        if (map == null || handle == null || row == null)
+        if (handle == null || row == null)
         {
             return;
         }
 
-        var frame = FrameOf(map);
+        var addon = LiveMap();
+        if (addon == null)
+        {
+            return;
+        }
+
+        var frame = FrameOf(addon);
 
         if (new Vector4(frame.X, frame.Y, frame.Width, frame.Height) != lastFrame)
         {
-            Layout(map);
+            Layout(addon);
         }
     }
 
@@ -229,7 +230,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
             button.Size = new Vector2(buttonSize);
         }
 
-        row.Size = new Vector2(buttonSize, ((buttonSize + Margin) * Order.Length) - Margin);
+        row.Size = new Vector2(buttonSize, ((buttonSize + Margin) * TreasureVisuals.Order.Length) - Margin);
         row.Position = anchor + new Vector2(0f, buttonSize + Margin);
         row.RecalculateLayout();
 
@@ -238,7 +239,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     private static float ButtonSizeWithin(float frameHeight)
     {
-        var fitting = ((frameHeight - (EdgeInset * 2f) + Margin) / (Order.Length + 1)) - Margin;
+        var fitting = ((frameHeight - (EdgeInset * 2f) + Margin) / (TreasureVisuals.Order.Length + 1)) - Margin;
 
         return Math.Clamp(fitting, SmallestButtonSize, LargestButtonSize);
     }
@@ -269,7 +270,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
             y = addon->TitleContainerNode->Y + addon->TitleContainerNode->Height;
         }
 
-        var columnHeight = ((buttonSize + Margin) * (Order.Length + 1)) - Margin;
+        var columnHeight = ((buttonSize + Margin) * (TreasureVisuals.Order.Length + 1)) - Margin;
         var lowestTop = frame.Y + frame.Height - EdgeInset - columnHeight;
         var x = frame.X + frame.Width - buttonSize - EdgeInset;
 
@@ -299,7 +300,7 @@ public sealed unsafe class TreasureMapToolbar : IDisposable
 
     private void Release()
     {
-        map = null;
+        attached = false;
         lastFrame = default;
 
         foreach (var button in buttons.Values)

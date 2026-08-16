@@ -5,11 +5,24 @@ using Hornwatch.Core.Hazards;
 
 namespace Hornwatch.Core.Treasure;
 
+public enum CofferOutcome
+{
+    Collected,
+
+    Empty,
+
+    Reached,
+
+    Unreachable,
+
+    TimedOut,
+}
+
 public sealed class HuntReport
 {
     private const float BrushRange = 30f;
 
-    private readonly Dictionary<string, int> outcomes = [];
+    private readonly Dictionary<CofferOutcome, int> outcomes = [];
     private readonly HashSet<ulong> hazardsBrushed = [];
     private readonly HashSet<string> areasEntered = [];
 
@@ -38,7 +51,7 @@ public sealed class HuntReport
         HasStarted = true;
     }
 
-    public void Record(string outcome) =>
+    public void Record(CofferOutcome outcome) =>
         outcomes[outcome] = outcomes.TryGetValue(outcome, out var seen) ? seen + 1 : 1;
 
     public void Observe(Vector3? here, bool fighting, TimeSpan since, IHazardSource? hazards)
@@ -57,7 +70,7 @@ public sealed class HuntReport
         {
             if (lastPosition is { } previous)
             {
-                WalkedYalms += Ground(previous, at);
+                WalkedYalms += previous.GroundDistanceTo(at);
             }
 
             lastPosition = at;
@@ -83,7 +96,7 @@ public sealed class HuntReport
     {
         foreach (var hazard in hazards.Active)
         {
-            var distance = Ground(hazard.Position, at);
+            var distance = hazard.Position.GroundDistanceTo(at);
             if (distance > BrushRange)
             {
                 continue;
@@ -120,12 +133,5 @@ public sealed class HuntReport
                $"hazards (level {dangerousFromLevel}+) brushed within {BrushRange:F0}y: " +
                $"{hazardsBrushed.Count}, highest level {highestHazardLevel}, closest {closest} | " +
                $"marked areas entered: {(areasEntered.Count == 0 ? "none" : string.Join(", ", areasEntered))}";
-    }
-
-    private static float Ground(Vector3 a, Vector3 b)
-    {
-        var dx = a.X - b.X;
-        var dz = a.Z - b.Z;
-        return MathF.Sqrt((dx * dx) + (dz * dz));
     }
 }

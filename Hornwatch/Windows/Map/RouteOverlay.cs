@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin.Services;
+using Hornwatch.Core;
 using Hornwatch.Core.Localization;
 using Hornwatch.Core.Navigation;
 using Hornwatch.Core.Treasure;
@@ -62,7 +63,7 @@ public sealed class RouteOverlay(
             drawList.AddCircle(target, 11f, DestinationColour, 0, 2.5f);
             drawList.AddCircleFilled(target, 3.5f, DestinationColour);
 
-            var distance = here is { } at ? Ground(at, destination) : 0f;
+            var distance = here is { } at ? at.GroundDistanceTo(destination) : 0f;
             Label(drawList, target + new Vector2(14f, -8f),
                 $"{localizer.Get($"travel.phase.{travel.Phase}")} - {distance:F0}y");
         }
@@ -134,11 +135,4 @@ public sealed class RouteOverlay(
 
     private Vector2? Project(Vector3 world) =>
         gameGui.WorldToScreen(world, out var screen) ? screen : null;
-
-    private static float Ground(Vector3 a, Vector3 b)
-    {
-        var dx = a.X - b.X;
-        var dz = a.Z - b.Z;
-        return MathF.Sqrt((dx * dx) + (dz * dz));
-    }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
@@ -14,7 +15,12 @@ public enum PotSide
 
 public sealed record PotFate(ushort FateId, uint TerritoryId, PotSide Side, float MapX, float MapY);
 
-public sealed class PotCatalog(IDataManager data, IDataCache cache, OccultMapProjection projection)
+public sealed class PotCatalog(
+    IDataManager data,
+    IDataCache cache,
+    OccultMapProjection projection,
+    Action<ushort, Vector3> remember,
+    Func<ushort, Vector3?> recall)
 {
     private static readonly PotFate[] Pots =
     [
@@ -72,13 +78,28 @@ public sealed class PotCatalog(IDataManager data, IDataCache cache, OccultMapPro
         return string.Empty;
     });
 
-    public void Observe(ushort fateId, Vector3 position) => observed[fateId] = position;
+    public void Observe(ushort fateId, Vector3 position)
+    {
+        if (observed.TryGetValue(fateId, out var known) && known == position)
+        {
+            return;
+        }
+
+        observed[fateId] = position;
+        remember(fateId, position);
+    }
 
     public Vector3? PositionOf(PotFate pot)
     {
         if (observed.TryGetValue(pot.FateId, out var seen))
         {
             return seen;
+        }
+
+        if (recall(pot.FateId) is { } remembered)
+        {
+            observed[pot.FateId] = remembered;
+            return remembered;
         }
 
         return projection.ToWorld(pot.TerritoryId, pot.MapX, pot.MapY);

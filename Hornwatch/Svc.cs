@@ -2,9 +2,9 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
-namespace Hornwatch.Core;
+namespace Hornwatch;
 
-public class Svc
+public sealed class Svc
 {
     [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] public static ICommandManager Commands { get; private set; } = null!;
@@ -22,6 +22,7 @@ public class Svc
     [PluginService] public static ITextureProvider Textures { get; private set; } = null!;
     [PluginService] public static IToastGui Toasts { get; private set; } = null!;
     [PluginService] public static IAddonLifecycle AddonLifecycle { get; private set; } = null!;
+    [PluginService] public static IDtrBar ServerBar { get; private set; } = null!;
     [PluginService] public static IPluginLog Log { get; private set; } = null!;
 
     public static void Init(IDalamudPluginInterface pluginInterface)

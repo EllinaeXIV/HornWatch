@@ -20,6 +20,7 @@ public sealed class TreasureHunt(
     ITravelService travel,
     Func<ISpottedTreasureSource?> spotted,
     Func<IHazardSource?> hazards,
+    Func<ITreasureSurvey?> survey,
     Func<bool> inCombat,
     Func<Vector3?> playerPosition,
     Func<uint> currentTerritory,
@@ -45,6 +46,8 @@ public sealed class TreasureHunt(
 
     private static readonly TimeSpan CofferDeadline = TimeSpan.FromMinutes(2.5);
 
+    private static readonly TimeSpan BetweenSweeps = TimeSpan.FromSeconds(12);
+
     private readonly List<TreasurePoint> route = [];
 
     private readonly HuntReport report = new();
@@ -58,6 +61,7 @@ public sealed class TreasureHunt(
     private DateTimeOffset legStartedAt = DateTimeOffset.MaxValue;
     private int approachAttempts;
     private DateTimeOffset lastApproachAt = DateTimeOffset.MinValue;
+    private DateTimeOffset lastSweepAt = DateTimeOffset.MinValue;
 
     public HuntState State { get; private set; } = HuntState.Idle;
 
@@ -81,8 +85,10 @@ public sealed class TreasureHunt(
 
         this.options = options;
 
+        var candidates = options.SightedOnly ? SightedNow(points) : points;
+
         route.Clear();
-        route.AddRange(TreasureRoutePlanner.Plan(Reachable(points, options), from, options));
+        route.AddRange(TreasureRoutePlanner.Plan(Reachable(candidates, options), from, options));
 
         plannedFor = currentTerritory();
         index = 0;
@@ -181,6 +187,8 @@ public sealed class TreasureHunt(
         report.Observe(playerPosition(), inCombat(), now - observedAt, hazards());
         observedAt = now;
 
+        SweepForCoffers(now);
+
         if (currentTerritory() != plannedFor)
         {
             log.Information("[hunt] zone changed - stopping.");
@@ -197,11 +205,11 @@ public sealed class TreasureHunt(
 
         var cofferHere = CofferNear(target.Position);
         var aim = cofferHere ?? target.Position;
-        var toTarget = playerPosition() is { } here ? Ground(here, aim) : float.MaxValue;
+        var toTarget = playerPosition() is { } here ? here.GroundDistanceTo(aim) : float.MaxValue;
 
-        if (toTarget > CollectedRange && toTarget <= SightRange && cofferHere == null)
+        if (CanSeeCoffers && cofferHere == null && toTarget > CollectedRange && toTarget <= SightRange)
         {
-            Advance("nothing there - moving on");
+            Advance(CofferOutcome.Empty, "nothing there - moving on");
             return;
         }
 
@@ -219,13 +227,13 @@ public sealed class TreasureHunt(
                 return;
             }
 
-            Advance("collected");
+            Advance(CofferOutcome.Collected, "collected");
             return;
         }
 
         if (DateTimeOffset.UtcNow - legStartedAt > CofferDeadline)
         {
-            Advance("gave up - the leg ran past its deadline");
+            Advance(CofferOutcome.TimedOut, "gave up - the leg ran past its deadline");
             return;
         }
 
@@ -245,7 +253,7 @@ public sealed class TreasureHunt(
             lastApproachAt = DateTimeOffset.UtcNow;
             approachAttempts++;
             log.Information($"[hunt] {toTarget:F1}y short of coffer {index + 1} - closing in ({approachAttempts}).");
-            MoveOnto(aim, standingOnGround: cofferHere != null);
+            MoveOnto(aim, isLiveObject: cofferHere != null);
             return;
         }
 
@@ -260,14 +268,16 @@ public sealed class TreasureHunt(
             return;
         }
 
-        Advance(toTarget <= ReachedRange ? "reached" : $"unreachable ({toTarget:F0}y away)");
+        Advance(
+            toTarget <= ReachedRange ? CofferOutcome.Reached : CofferOutcome.Unreachable,
+            toTarget <= ReachedRange ? "reached" : $"unreachable ({toTarget:F0}y away)");
     }
 
-    private void Advance(string reason)
+    private void Advance(CofferOutcome outcome, string reason)
     {
         log.Information($"[hunt] coffer {index + 1}/{route.Count}: {reason}.");
 
-        report.Record(reason.Split(' ')[0]);
+        report.Record(outcome);
 
         index++;
         ForgetArrival();
@@ -299,11 +309,11 @@ public sealed class TreasureHunt(
         legStartedAt = DateTimeOffset.UtcNow;
 
         var coffer = CofferNear(target.Position);
-        MoveOnto(coffer ?? target.Position, standingOnGround: coffer != null);
+        MoveOnto(coffer ?? target.Position, isLiveObject: coffer != null);
     }
 
-    private void MoveOnto(Vector3 aim, bool standingOnGround) =>
-        travel.TravelTo(aim, null, 0f, dismountOnArrival: false, snapToGround: !standingOnGround);
+    private void MoveOnto(Vector3 aim, bool isLiveObject) =>
+        travel.TravelTo(aim, null, 0f, dismountOnArrival: false, snapToGround: !isLiveObject);
 
     private IReadOnlyList<TreasurePoint> Reachable(
         IReadOnlyList<TreasurePoint> points, TreasureRouteOptions wanted)
@@ -335,11 +345,49 @@ public sealed class TreasureHunt(
         return kept;
     }
 
+    private void SweepForCoffers(DateTimeOffset now)
+    {
+        if (!options.SweepWhileWalking || now - lastSweepAt < BetweenSweeps || inCombat())
+        {
+            return;
+        }
+
+        if (survey() is not { IsUsable: true } ability)
+        {
+            return;
+        }
+
+        lastSweepAt = now;
+        ability.Sweep();
+    }
+
+    private bool CanSeeCoffers => spotted() != null;
+
+    private IReadOnlyList<TreasurePoint> SightedNow(IReadOnlyList<TreasurePoint> catalogue)
+    {
+        if (spotted() is not { Spotted.Count: > 0 } source)
+        {
+            log.Information("[hunt] nothing in sight, so the route falls back to the catalogue.");
+            return catalogue;
+        }
+
+        var onFloor = new List<TreasurePoint>(source.Spotted.Count);
+
+        foreach (var coffer in source.Spotted)
+        {
+            onFloor.Add(coffer.AsWaypoint());
+        }
+
+        log.Information($"[hunt] routing over {onFloor.Count} coffers in sight instead of {catalogue.Count} catalogue points.");
+
+        return onFloor;
+    }
+
     private Vector3? CofferNear(Vector3 waypoint)
     {
         if (spotted() is not { } source)
         {
-            return waypoint;
+            return null;
         }
 
         Vector3? closest = null;
@@ -347,7 +395,7 @@ public sealed class TreasureHunt(
 
         foreach (var coffer in source.Spotted)
         {
-            var distance = Ground(coffer.Position, waypoint);
+            var distance = coffer.Position.GroundDistanceTo(waypoint);
             if (distance <= bestDistance)
             {
                 bestDistance = distance;
@@ -356,12 +404,5 @@ public sealed class TreasureHunt(
         }
 
         return closest;
-    }
-
-    private static float Ground(Vector3 a, Vector3 b)
-    {
-        var dx = a.X - b.X;
-        var dz = a.Z - b.Z;
-        return MathF.Sqrt((dx * dx) + (dz * dz));
     }
 }

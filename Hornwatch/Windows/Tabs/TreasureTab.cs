@@ -35,7 +35,7 @@ public sealed class TreasureTab(FieldModuleRegistry modules, ILocalizer localize
         ImGui.TextColored(theme.Current.Accent, localizer.Get("treasure.route"));
         ImGui.Separator();
 
-        var territory = Core.Svc.ClientState.TerritoryType;
+        var territory = Svc.ClientState.TerritoryType;
         var zone = configuration.TreasureFor(territory);
         var options = zone.Route;
 
@@ -79,6 +79,25 @@ public sealed class TreasureTab(FieldModuleRegistry modules, ILocalizer localize
             zone.Route = options with { ReturnToCampWhenDone = returnWhenDone };
             configuration.Save();
         }
+
+        var sightedOnly = options.SightedOnly;
+        if (ImGui.Checkbox(localizer.Get("treasure.routeSighted"), ref sightedOnly))
+        {
+            zone.Route = options with { SightedOnly = sightedOnly };
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("treasure.routeSightedHint"));
+
+        var sweep = options.SweepWhileWalking;
+        if (ImGui.Checkbox(localizer.Get("treasure.routeSweep"), ref sweep))
+        {
+            zone.Route = options with { SweepWhileWalking = sweep };
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("treasure.routeSweepHint"));
+
         ImGui.Spacing();
 
         if (ImGui.Button(localizer.Get("treasure.plan")))

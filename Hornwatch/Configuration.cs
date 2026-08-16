@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Dalamud.Configuration;
 using Hornwatch.Core.Encounters;
 using Hornwatch.Core.Treasure;
@@ -40,6 +41,8 @@ public class Configuration : IPluginConfiguration
     public bool UseReturn { get; set; } = true;
 
     public bool ShowRouteOverlay { get; set; }
+
+    public bool ShowPotBarEntry { get; set; } = true;
 
     public Dictionary<uint, TreasureZoneSettings> TreasureByTerritory { get; set; } = new();
 
@@ -83,6 +86,10 @@ public class Configuration : IPluginConfiguration
     public Dictionary<string, RespawnEntry> PotForecasts { get; set; } = new();
 
     public uint PotForecastTerritory { get; set; }
+
+    public SessionWitness? PotForecastWitness { get; set; }
+
+    public Dictionary<uint, Vector3> PotPositions { get; set; } = new();
 
     public AlertSetting For(string moduleKey, uint territoryId, EncounterKind kind)
     {

@@ -14,16 +14,27 @@ public sealed class JsonLocalizer(
 {
     private const string DefaultLanguage = "en";
 
+    private static readonly TimeSpan BetweenDiskChecks = TimeSpan.FromSeconds(1);
+
     private Dictionary<string, string> strings = [];
     private Dictionary<string, string> fallback = [];
     private string loadedLanguage = string.Empty;
     private DateTime loadedAt;
+    private DateTimeOffset checkedAt = DateTimeOffset.MinValue;
 
     public string Language => loadedLanguage;
 
     public void Reload()
     {
         var wanted = Resolve();
+
+        if (wanted == loadedLanguage && DateTimeOffset.UtcNow - checkedAt < BetweenDiskChecks)
+        {
+            return;
+        }
+
+        checkedAt = DateTimeOffset.UtcNow;
+
         var writtenAt = LastWrite(wanted);
 
         if (wanted == loadedLanguage && writtenAt == loadedAt)
@@ -31,8 +42,10 @@ public sealed class JsonLocalizer(
             return;
         }
 
-        fallback = Load(DefaultLanguage);
-        strings = wanted == DefaultLanguage ? fallback : Load(wanted);
+        var english = Load(DefaultLanguage) ?? fallback;
+
+        fallback = english;
+        strings = wanted == DefaultLanguage ? english : Load(wanted) ?? strings;
         loadedLanguage = wanted;
         loadedAt = writtenAt;
     }
@@ -90,7 +103,7 @@ public sealed class JsonLocalizer(
         return clientState.ClientLanguage == ClientLanguage.French ? "fr" : DefaultLanguage;
     }
 
-    private Dictionary<string, string> Load(string language)
+    private Dictionary<string, string>? Load(string language)
     {
         var path = Path.Combine(resourceDirectory, $"{language}.json");
 
@@ -99,16 +112,16 @@ public sealed class JsonLocalizer(
             if (File.Exists(path))
             {
                 var json = File.ReadAllText(path);
-                return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? [];
+                return JsonSerializer.Deserialize<Dictionary<string, string>>(json);
             }
 
-            log.Warning($"{path} is missing; every string it holds will show as its own key.");
+            log.Warning($"{path} is missing; keeping the strings already loaded.");
         }
         catch (Exception ex)
         {
-            log.Error(ex, $"{path} could not be read; every string it holds will show as its own key.");
+            log.Error(ex, $"{path} could not be read; keeping the strings already loaded.");
         }
 
-        return [];
+        return null;
     }
 }

@@ -97,7 +97,7 @@ public sealed class GuideTab(FieldModuleRegistry modules, ILocalizer localizer, 
     {
         using var id = ImRaii.PushId(entry.Name);
 
-        DrawIcon(entry.IconId);
+        GameIcon.DrawOrSpace(entry.IconId, IconSize);
         ImGui.SameLine();
 
         using (ImRaii.Group())
@@ -132,20 +132,5 @@ public sealed class GuideTab(FieldModuleRegistry modules, ILocalizer localizer, 
             _ => localizer.Format("guide.unlock.monsterNoLevel",
                     entry.SourceName ?? "?", entry.ZoneName ?? "?", entry.X ?? 0, entry.Y ?? 0),
         };
-    }
-
-    private static void DrawIcon(uint iconId)
-    {
-        if (iconId != 0)
-        {
-            var texture = Svc.Textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrDefault();
-            if (texture != null)
-            {
-                ImGui.Image(texture.Handle, new Vector2(IconSize, IconSize));
-                return;
-            }
-        }
-
-        ImGui.Dummy(new Vector2(IconSize, IconSize));
     }
 }

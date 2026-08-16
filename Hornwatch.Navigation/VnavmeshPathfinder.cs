@@ -4,6 +4,7 @@ using System.Numerics;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
+using Hornwatch.Core;
 using Hornwatch.Core.Navigation;
 
 namespace Hornwatch.Navigation;
@@ -14,7 +15,13 @@ public sealed class VnavmeshPathfinder : IPathfinder
     private readonly IPluginLog log;
 
     private const float SnapRadiusHorizontal = 20f;
-    private const float SnapRadiusVertical = 500f;
+    private const float SnapRadiusVertical = 20f;
+
+    private const float MaximumSnapDisplacement = 5f;
+
+    private const float FloorSearchRadius = 40f;
+
+    private const float MaximumFloorDrift = 6f;
 
     private const float ProbeAltitude = 1000f;
 
@@ -84,7 +91,8 @@ public sealed class VnavmeshPathfinder : IPathfinder
 
         try
         {
-            if (meshNearestPoint.InvokeFunc(approximate, SnapRadiusHorizontal, SnapRadiusVertical) is { } onMesh)
+            if (meshNearestPoint.InvokeFunc(approximate, SnapRadiusHorizontal, SnapRadiusVertical) is { } onMesh &&
+                Vector3.Distance(approximate, onMesh) <= MaximumSnapDisplacement)
             {
                 return onMesh;
             }
@@ -92,9 +100,20 @@ public sealed class VnavmeshPathfinder : IPathfinder
         catch (Exception ex)
         {
             Report("Query.Mesh.NearestPoint", ex);
+            return approximate;
         }
 
-        return approximate;
+        var floor = GroundLevelAt(approximate);
+
+        if (floor == approximate)
+        {
+            log.Warning($"{approximate} is not on the mesh and no floor sits under it - a route there will not start.");
+            return approximate;
+        }
+
+        log.Information($"{approximate} was off the mesh; the floor under it is {floor}.");
+
+        return floor;
     }
 
     public Vector3 GroundLevelAt(Vector3 column)
@@ -106,9 +125,18 @@ public sealed class VnavmeshPathfinder : IPathfinder
 
         try
         {
-            if (meshPointOnFloor.InvokeFunc(column with { Y = ProbeAltitude }, true, SnapRadiusHorizontal) is { } floor)
+            if (meshPointOnFloor.InvokeFunc(column with { Y = ProbeAltitude }, true, FloorSearchRadius) is { } floor)
             {
-                return floor;
+                var drift = column.GroundDistanceTo(floor);
+
+                if (drift <= MaximumFloorDrift)
+                {
+                    return floor;
+                }
+
+                Report(
+                    $"floor for {column}",
+                    $"the nearest floor to {column} is {drift:F1}y sideways at height {floor.Y:F0} - that is a roof or another structure, not the ground under it.");
             }
         }
         catch (Exception ex)
@@ -172,6 +200,14 @@ public sealed class VnavmeshPathfinder : IPathfinder
         if (reported.Add(call))
         {
             log.Error(ex, $"vnavmesh IPC '{call}' failed - the feature behind it is not working.");
+        }
+    }
+
+    private void Report(string subject, string message)
+    {
+        if (reported.Add(subject))
+        {
+            log.Warning(message);
         }
     }
 }

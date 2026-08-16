@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Dalamud.Game.Addon.Lifecycle;
+using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -8,7 +10,7 @@ using Lumina.Excel.Sheets;
 
 namespace Hornwatch.Navigation;
 
-public sealed class SelectYesnoConfirmer(IGameGui gameGui, IDataManager data, IPluginLog log) : IConfirmationDialog
+public sealed class SelectYesnoConfirmer : IConfirmationDialog, IDisposable
 {
     private const string AddonName = "SelectYesno";
 
@@ -20,34 +22,90 @@ public sealed class SelectYesnoConfirmer(IGameGui gameGui, IDataManager data, IP
 
     private const int ShortestUsableFragment = 8;
 
-    private bool answeredCurrent;
+    private const double ShortestAcceptedOverlap = 0.6;
+
+    private readonly IGameGui gameGui;
+    private readonly IDataManager data;
+    private readonly IAddonLifecycle addons;
+    private readonly Func<bool> answeringAllowed;
+    private readonly IPluginLog log;
+
+    private static readonly TimeSpan SettleAfterAnswering = TimeSpan.FromSeconds(1);
+
+    private bool unanswered;
     private bool reportedMismatch;
     private string? promptWording;
+    private DateTimeOffset answeredAt = DateTimeOffset.MinValue;
+
+    public SelectYesnoConfirmer(
+        IGameGui gameGui,
+        IDataManager data,
+        IAddonLifecycle addons,
+        Func<bool> answeringAllowed,
+        IPluginLog log)
+    {
+        this.gameGui = gameGui;
+        this.data = data;
+        this.addons = addons;
+        this.answeringAllowed = answeringAllowed;
+        this.log = log;
+
+        addons.RegisterListener(AddonEvent.PostSetup, AddonName, OnPrompt);
+        addons.RegisterListener(AddonEvent.PostRefresh, AddonName, OnPrompt);
+    }
+
+    public void Dispose()
+    {
+        addons.UnregisterListener(AddonEvent.PostSetup, AddonName, OnPrompt);
+        addons.UnregisterListener(AddonEvent.PostRefresh, AddonName, OnPrompt);
+    }
 
     public unsafe bool IsAwaitingAnswer => Visible() != null;
 
     public unsafe void Accept()
     {
-        var addon = Locate();
+        if (!unanswered)
+        {
+            return;
+        }
 
+        if (!answeringAllowed())
+        {
+            log.Information("[recall] a prompt is waiting but travel is idle - leaving it alone.");
+            unanswered = false;
+            return;
+        }
+
+        var addon = Locate();
         if (addon == null)
         {
-            answeredCurrent = false;
             return;
         }
 
-        if (answeredCurrent)
-        {
-            return;
-        }
-
-        answeredCurrent = true;
-        reportedMismatch = false;
+        unanswered = false;
+        answeredAt = DateTimeOffset.UtcNow;
 
         var choice = stackalloc AtkValue[1];
         choice->Type = AtkValueType.Int;
         choice->Int = YesIndex;
-        addon->AtkUnitBase.FireCallback(1, choice);
+        addon->AtkUnitBase.FireCallback(1, choice, true);
+
+        log.Information($"[recall] answered Yes; the prompt is {(Visible() == null ? "gone" : "still up")}.");
+    }
+
+    private void OnPrompt(AddonEvent type, AddonArgs args)
+    {
+        var settling = DateTimeOffset.UtcNow - answeredAt < SettleAfterAnswering;
+
+        log.Information($"[recall] SelectYesno {type}{(settling ? " ignored, still settling" : " armed")}.");
+
+        if (settling)
+        {
+            return;
+        }
+
+        unanswered = true;
+        reportedMismatch = false;
     }
 
     private unsafe AddonSelectYesno* Visible()
@@ -136,8 +194,13 @@ public sealed class SelectYesnoConfirmer(IGameGui gameGui, IDataManager data, IP
             return false;
         }
 
-        return trimmed.Contains(wording, StringComparison.OrdinalIgnoreCase)
-               || wording.Contains(trimmed, StringComparison.OrdinalIgnoreCase);
+        if (trimmed.Contains(wording, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return trimmed.Length >= wording.Length * ShortestAcceptedOverlap
+               && wording.Contains(trimmed, StringComparison.OrdinalIgnoreCase);
     }
 
     private string BuildWording()

@@ -21,6 +21,9 @@ public enum TravelPhase
     Walking,
 }
 
+public sealed record PlannedTrip(
+    Vector3 Destination, string? TargetId, float? Radius, bool DismountOnArrival, bool SnapToGround);
+
 public interface ITravelService
 {
     bool IsEnabled { get; }
@@ -68,8 +71,6 @@ public sealed class TravelCoordinator(
 
     private const float AtTeleportPointRange = 25f;
 
-    private const float DirectBoardingRange = 10f;
-
     private const float MaximumWalkToTeleportPoint = 120f;
 
     private const float MountDistanceThreshold = 100f;
@@ -77,6 +78,10 @@ public sealed class TravelCoordinator(
     private const float MountForBoardingDistance = 40f;
 
     private const float SameShardRange = 5f;
+
+    private const float SavingWorthARecall = 350f;
+
+    private const float SavingWorthABoardingWalk = 150f;
 
     private const float DismountDistanceMin = 15f;
 
@@ -119,7 +124,13 @@ public sealed class TravelCoordinator(
 
     private const float UnstickBackstep = 5f;
 
+    private const float NeverMovedRange = 4f;
+
+    private const int AttemptsBeforeCallingItUnreachable = 1;
+
     private static readonly TimeSpan MountTimeout = TimeSpan.FromSeconds(10);
+
+    private static readonly TimeSpan OnwardPatience = TimeSpan.FromMinutes(3);
 
     private Vector3 finalDestination;
     private uint startedInTerritory;
@@ -142,12 +153,11 @@ public sealed class TravelCoordinator(
     private bool dismountOnApproach = true;
 
     private Vector3? mountedWalkToShard;
+    private Vector3 walkStartedFrom;
 
-    private Vector3? onwardDestination;
-    private string? onwardTargetId;
-    private float? onwardRadius;
-    private bool onwardDismount;
-    private bool onwardSnap;
+    private PlannedTrip? onward;
+    private DateTimeOffset onwardExpiresAt;
+    private bool recallSpent;
 
     public TravelPhase Phase { get; private set; } = TravelPhase.Idle;
 
@@ -183,26 +193,14 @@ public sealed class TravelCoordinator(
         targetRadius = radius;
         unstickAttempts = 0;
         mountedWalkToShard = null;
+        recallSpent = false;
         dismountOnApproach = dismountOnArrival;
 
         var wanted = Dropzone(destination, radius);
         finalDestination = snapToGround ? pathfinder.SnapToGround(wanted) : wanted;
         startedInTerritory = currentTerritory();
 
-        if (playerPosition() is { } standing &&
-            transport()?.StepTowards(standing, finalDestination) is { } pad)
-        {
-            log.Information($"[transport] '{pad.Name}' first, then on to the destination.");
-
-            onwardDestination = finalDestination;
-            onwardTargetId = targetId;
-            onwardRadius = radius;
-            onwardDismount = dismountOnArrival;
-            onwardSnap = snapToGround;
-
-            finalDestination = pathfinder.SnapToGround(pad.Entrance);
-            this.targetId = null;
-        }
+        RedirectThroughTransport(new PlannedTrip(finalDestination, targetId, radius, dismountOnArrival, snapToGround));
 
         plannedTeleport = PlanTeleport(finalDestination);
         if (plannedTeleport == null)
@@ -214,30 +212,51 @@ public sealed class TravelCoordinator(
         BeginBoarding();
     }
 
-    // The pad moves the character without telling anyone. Nothing needs to know where it lands: the
-    // moment the region test stops asking for it, the crossing has happened and the trip re-plans
-    // from wherever that turned out to be.
-    private bool CarriedOnward()
+    private bool RedirectThroughTransport(PlannedTrip trip)
     {
-        if (onwardDestination is not { } onward || playerPosition() is not { } here)
+        if (playerPosition() is not { } standing ||
+            transport()?.StepTowards(standing, trip.Destination) is not { } pad)
         {
             return false;
         }
 
-        if (transport()?.StepTowards(here, onward) != null)
+        log.Information($"[transport] '{pad.Name}' first, then on to the destination.");
+
+        onward = trip;
+        onwardExpiresAt = DateTimeOffset.UtcNow + OnwardPatience;
+
+        finalDestination = pathfinder.SnapToGround(pad.Entrance);
+        targetId = null;
+
+        return true;
+    }
+
+    private bool CarriedOnward()
+    {
+        if (onward is not { } pending || playerPosition() is not { } here)
+        {
+            return false;
+        }
+
+        if (DateTimeOffset.UtcNow > onwardExpiresAt)
+        {
+            log.Information("[transport] the pad was never taken - dropping the rest of the trip.");
+            onward = null;
+            return false;
+        }
+
+        if (transport()?.StepTowards(here, pending.Destination) != null)
         {
             return false;
         }
 
         log.Information("[transport] carried across - re-planning from where we landed.");
 
-        var targetIdAfter = onwardTargetId;
-        var radiusAfter = onwardRadius;
-        var dismountAfter = onwardDismount;
-        var snapAfter = onwardSnap;
+        onward = null;
+        TravelTo(
+            pending.Destination, pending.TargetId, pending.Radius,
+            pending.DismountOnArrival, pending.SnapToGround);
 
-        onwardDestination = null;
-        TravelTo(onward, targetIdAfter, radiusAfter, dismountAfter, snapAfter);
         return true;
     }
 
@@ -285,31 +304,11 @@ public sealed class TravelCoordinator(
         switch (Phase)
         {
             case TravelPhase.Withdrawing:
-                if (Recalled || Elapsed > (recallAccepted ? RecallTimeout : RecallRefusedTimeout))
-                {
-                    Phase = TravelPhase.Idle;
-                    return;
-                }
-
-                confirmation.Accept();
-                TryRecallNow();
+                DriveRecall(onArrival: () => Phase = TravelPhase.Idle, onFailure: () => Phase = TravelPhase.Idle);
                 return;
 
             case TravelPhase.Recalling:
-                if (Recalled)
-                {
-                    BeginBoarding();
-                    return;
-                }
-
-                if (Elapsed > (recallAccepted ? RecallTimeout : RecallRefusedTimeout))
-                {
-                    StartWalking();
-                    return;
-                }
-
-                confirmation.Accept();
-                TryRecallNow();
+                DriveRecall(onArrival: BeginBoarding, onFailure: StartWalking);
                 return;
 
             case TravelPhase.WalkingToTeleport:
@@ -410,6 +409,16 @@ public sealed class TravelCoordinator(
 
                 if ((Settled && !pathfinder.IsMoving) || IsStalled())
                 {
+                    if (NeverLeftTheSpot())
+                    {
+                        log.Warning(
+                            $"[travel] no route from {walkStartedFrom} to {finalDestination} ({RemainingDistance():F0}y apart) - abandoning rather than shuffling.");
+
+                        pathfinder.Stop();
+                        Phase = TravelPhase.Idle;
+                        return;
+                    }
+
                     if (RemainingDistance() > ArrivalRange && TryUnstick())
                     {
                         return;
@@ -435,7 +444,7 @@ public sealed class TravelCoordinator(
         pathfinder.Stop();
         targetId = null;
         mountedWalkToShard = null;
-        onwardDestination = null;
+        onward = null;
         Phase = TravelPhase.Idle;
     }
 
@@ -453,23 +462,30 @@ public sealed class TravelCoordinator(
             return null;
         }
 
-        var nearest = points.NearestTo(destination);
+        var crossings = transport();
+
+        var nearest = points.NearestTo(
+            destination,
+            shard => crossings?.StepTowards(shard.Position, destination) == null);
+
         if (nearest == null)
         {
             return null;
         }
 
-        var playerToDestination = Horizontal(from.Value, destination);
-        var shardToDestination = Horizontal(nearest.Position, destination);
+        var playerToDestination = from.Value.GroundDistanceTo(destination);
+        var shardToDestination = nearest.Position.GroundDistanceTo(destination);
+        var saving = playerToDestination - shardToDestination;
+        var worthwhile = CanBoardHere() ? SavingWorthABoardingWalk : SavingWorthARecall;
 
-        if (playerToDestination <= shardToDestination)
+        if (saving < worthwhile)
         {
             log.Information(
-                $"[plan] walking: {playerToDestination:F0}y to go, shard {nearest.PlaceNameId} is no closer ({shardToDestination:F0}y).");
+                $"[plan] walking: {playerToDestination:F0}y to go, shard {nearest.PlaceNameId} would save {saving:F0}y and the detour costs {worthwhile:F0}y.");
             return null;
         }
 
-        if (NearestShardWithinWalk() is { } boardable && Horizontal(boardable, nearest.Position) < SameShardRange)
+        if (NearestShardWithinWalk() is { } boardable && boardable.GroundDistanceTo(nearest.Position) < SameShardRange)
         {
             log.Information(
                 $"[plan] walking: shard {nearest.PlaceNameId} is the one we would board from.");
@@ -488,7 +504,7 @@ public sealed class TravelCoordinator(
 
         if (boardingShard is { } shard)
         {
-            if (Horizontal(playerPosition() ?? shard, shard) <= DirectBoardingRange)
+            if (AtBoardingShard())
             {
                 boardingWalkTried = false;
                 BeginTeleport();
@@ -499,8 +515,9 @@ public sealed class TravelCoordinator(
             return;
         }
 
-        if (recallEnabled())
+        if (recallEnabled() && !recallSpent)
         {
+            recallSpent = true;
             recallAccepted = false;
             recallFrom = playerPosition();
             EnterPhase(TravelPhase.Recalling);
@@ -512,6 +529,11 @@ public sealed class TravelCoordinator(
 
     private bool EngagedAtDestination() =>
         inCombat() && RemainingDistance() <= ArrivalRange;
+
+    private bool NeverLeftTheSpot() =>
+        unstickAttempts >= AttemptsBeforeCallingItUnreachable
+        && playerPosition() is { } here
+        && here.GroundDistanceTo(walkStartedFrom) < NeverMovedRange;
 
     private float ArrivalRange => MathF.Max(targetRadius ?? DropzoneMaxOffset, MinimumArrivalRange);
 
@@ -631,6 +653,24 @@ public sealed class TravelCoordinator(
         EnterPhase(TravelPhase.Withdrawing);
     }
 
+    private void DriveRecall(Action onArrival, Action onFailure)
+    {
+        if (Recalled)
+        {
+            onArrival();
+            return;
+        }
+
+        if (Elapsed > (recallAccepted ? RecallTimeout : RecallRefusedTimeout))
+        {
+            onFailure();
+            return;
+        }
+
+        confirmation.Accept();
+        TryRecallNow();
+    }
+
     private void TryRecallNow()
     {
         if (confirmation.IsAwaitingAnswer)
@@ -653,9 +693,14 @@ public sealed class TravelCoordinator(
 
         lastAttemptAt = DateTimeOffset.UtcNow;
 
-        log.Information($"[recall] casting Return (accepted so far: {recallAccepted}).");
+        if (recall.Cast() == RecallAttempt.Sent)
+        {
+            recallAccepted = true;
+            log.Information("[recall] Return requested - waiting for its prompt or its cast.");
+            return;
+        }
 
-        recallAccepted |= recall.Cast() || recall.IsBusy;
+        log.Information("[recall] the game will not take Return right now - trying again shortly.");
     }
 
     private void GiveUpOnTeleport()
@@ -685,6 +730,13 @@ public sealed class TravelCoordinator(
 
     private void StartWalking()
     {
+        if (onward == null)
+        {
+            RedirectThroughTransport(
+                new PlannedTrip(finalDestination, targetId, targetRadius, dismountOnApproach, false));
+        }
+
+        walkStartedFrom = playerPosition() ?? finalDestination;
         dismountDistance = DismountDistanceMin + ((float)random.NextDouble() * (DismountDistanceMax - DismountDistanceMin));
         pathfinder.MoveTo(finalDestination);
         EnterPhase(TravelPhase.Walking);
@@ -716,7 +768,7 @@ public sealed class TravelCoordinator(
         get
         {
             if (recallFrom is { } origin && playerPosition() is { } now &&
-                Horizontal(origin, now) > RecallDisplacement)
+                origin.GroundDistanceTo(now) > RecallDisplacement)
             {
                 return true;
             }
@@ -734,7 +786,7 @@ public sealed class TravelCoordinator(
             return false;
         }
 
-        return Horizontal(here, shard) <= AtTeleportPointRange;
+        return here.GroundDistanceTo(shard) <= AtTeleportPointRange;
     }
 
     private Vector3 BoardingDestination(Vector3 shard)
@@ -759,7 +811,7 @@ public sealed class TravelCoordinator(
         }
 
         var target = teleporter.BoardingPoint ?? boardingShard;
-        return target is { } shard && Horizontal(here, shard) <= TeleportPointRange;
+        return target is { } shard && here.GroundDistanceTo(shard) <= TeleportPointRange;
     }
 
     private bool IsStalled()
@@ -769,7 +821,7 @@ public sealed class TravelCoordinator(
             return false;
         }
 
-        if (progressFrom is not { } mark || Horizontal(mark, now) > StallDistance)
+        if (progressFrom is not { } mark || mark.GroundDistanceTo(now) > StallDistance)
         {
             progressFrom = now;
             progressAt = DateTimeOffset.UtcNow;
@@ -793,7 +845,7 @@ public sealed class TravelCoordinator(
 
         foreach (var point in points.Points)
         {
-            var distance = Horizontal(from.Value, point.Position);
+            var distance = from.Value.GroundDistanceTo(point.Position);
             if (distance <= bestDistance)
             {
                 bestDistance = distance;
@@ -805,19 +857,12 @@ public sealed class TravelCoordinator(
     }
 
     private float DistanceTo(Vector3 point) =>
-        playerPosition() is { } here ? Horizontal(here, point) : float.NaN;
+        playerPosition() is { } here ? here.GroundDistanceTo(point) : float.NaN;
 
     private float RemainingDistance()
     {
         var from = playerPosition();
-        return from == null ? float.MaxValue : Horizontal(from.Value, finalDestination);
-    }
-
-    private static float Horizontal(Vector3 a, Vector3 b)
-    {
-        var dx = a.X - b.X;
-        var dz = a.Z - b.Z;
-        return MathF.Sqrt((dx * dx) + (dz * dz));
+        return from == null ? float.MaxValue : from.Value.GroundDistanceTo(finalDestination);
     }
 
     private Vector3 Dropzone(Vector3 centre, float? knownRadius)

@@ -21,6 +21,10 @@ public sealed class MainWindow : ThemedWindow, IDisposable
     private readonly ILocalizer localizer;
     private readonly List<ITab> tabs;
 
+    private string? pendingTab;
+
+    public const string WatchTabKey = "tab.watch";
+
     public MainWindow(
         Plugin plugin,
         FieldModuleRegistry modules,
@@ -62,6 +66,13 @@ public sealed class MainWindow : ThemedWindow, IDisposable
 
     public void Dispose() { }
 
+    public void Reveal(string titleKey)
+    {
+        pendingTab = titleKey;
+        IsOpen = true;
+        BringToFront();
+    }
+
     public override void Draw()
     {
         if (!modules.InSupportedZone)
@@ -76,9 +87,14 @@ public sealed class MainWindow : ThemedWindow, IDisposable
             return;
         }
 
+        var wanted = pendingTab;
+        pendingTab = null;
+
         foreach (var tab in tabs)
         {
-            using var item = ImRaii.TabItem(localizer.Get(tab.TitleKey));
+            var flags = tab.TitleKey == wanted ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+
+            using var item = ImRaii.TabItem(localizer.Get(tab.TitleKey), flags);
             if (!item.Success)
             {
                 continue;

@@ -28,19 +28,27 @@ public sealed class OccultCrescentModule : FieldModuleBase
         string resourceDirectory,
         IPluginLog log,
         Func<uint> currentTerritory,
-        Func<Vector3, Vector3> resolveGround)
+        Func<Vector3, Vector3> resolveGround,
+        Func<bool> surveyAllowed)
         : base("occult-crescent", "module.occultCrescent", OccultTerritories.All)
     {
         var catalog = new PhantomJobCatalog(data, cache);
         var projection = new OccultMapProjection(data, cache, resolveGround, log);
-        var pots = new PotCatalog(data, cache, projection);
+        var pots = new PotCatalog(
+            data, cache, projection,
+            (fateId, position) =>
+            {
+                respawnStore.SeenAt[fateId] = position;
+                respawnStore.Save();
+            },
+            fateId => respawnStore.SeenAt.TryGetValue(fateId, out var seen) ? seen : null);
         var layers = new OccultMapLayers(data, cache);
         var depths = new OccultDepths(layers);
 
         encounters = new OccultEncounterSource(
             fates, pots, new TowerCatalog(projection), currentTerritory);
         JobSource = new OccultJobSource(catalog, objects);
-        treasureSpotter = new OccultTreasureSpotter(objects, data, log);
+        treasureSpotter = new OccultTreasureSpotter(objects, data, layers, depths, currentTerritory, log);
         hazards = new OccultHazardSource(objects, depths, currentTerritory);
         potTracker = new RespawnTracker(respawnStore, new PotRotationRule(pots), currentTerritory);
 
@@ -53,6 +61,7 @@ public sealed class OccultCrescentModule : FieldModuleBase
         Provide<ITreasureSource>(new OccultTreasureCatalog(resourceDirectory, layers, depths, log));
         Provide<ISpottedTreasureSource>(treasureSpotter);
         Provide<IHazardSource>(hazards);
+        Provide<ITreasureSurvey>(new OccultTreasuresight(surveyAllowed));
     }
 
     public OccultJobSource JobSource { get; }
@@ -70,5 +79,5 @@ public sealed class OccultCrescentModule : FieldModuleBase
         potTracker.PruneStale(TimeSpan.FromHours(1));
     }
 
-    public override void OnDeactivated() => potTracker.Invalidate();
+    public override void OnDeactivated() => potTracker.Detach();
 }

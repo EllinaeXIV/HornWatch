@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using Hornwatch.Core;
 using Hornwatch.Core.Hazards;
 
 namespace Hornwatch.Modules.OccultCrescent;
@@ -58,7 +59,7 @@ public sealed class OccultHazardSource(IObjectTable objects, OccultDepths depths
 
         foreach (var hazard in active)
         {
-            if (Ground(hazard.Position, point) <= radius)
+            if (hazard.Position.GroundDistanceTo(point) <= radius)
             {
                 found++;
             }
@@ -85,7 +86,7 @@ public sealed class OccultHazardSource(IObjectTable objects, OccultDepths depths
 
         foreach (var hazard in active)
         {
-            var distance = Ground(hazard.Position, point);
+            var distance = hazard.Position.GroundDistanceTo(point);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
@@ -94,12 +95,5 @@ public sealed class OccultHazardSource(IObjectTable objects, OccultDepths depths
         }
 
         return closest;
-    }
-
-    private static float Ground(Vector3 a, Vector3 b)
-    {
-        var dx = a.X - b.X;
-        var dz = a.Z - b.Z;
-        return MathF.Sqrt((dx * dx) + (dz * dz));
     }
 }

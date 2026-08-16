@@ -208,7 +208,7 @@ public sealed class ShardTeleporter(IObjectTable objects, ITargetManager targets
         var choice = stackalloc AtkValue[1];
         choice->Type = AtkValueType.Int;
         choice->Int = index;
-        addon->AtkUnitBase.FireCallback(1, choice);
+        addon->AtkUnitBase.FireCallback(1, choice, true);
     }
 
     private unsafe int FindEntry(ref PopupMenu menu, bool exact)

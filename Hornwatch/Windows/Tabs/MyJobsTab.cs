@@ -12,6 +12,7 @@ namespace Hornwatch.Windows.Tabs;
 
 public sealed class MyJobsTab(FieldModuleRegistry modules, ILocalizer localizer, ThemeManager theme) : ITab
 {
+    private const float JobIconSize = 22f;
 
     public string TitleKey => "tab.myJobs";
 
@@ -99,7 +100,7 @@ public sealed class MyJobsTab(FieldModuleRegistry modules, ILocalizer localizer,
             ImGui.TableNextRow();
 
             ImGui.TableNextColumn();
-            DrawIcon(job.IconId);
+            GameIcon.DrawOrSpace(job.IconId, JobIconSize);
 
             ImGui.TableNextColumn();
             if (isCurrent)
@@ -133,23 +134,5 @@ public sealed class MyJobsTab(FieldModuleRegistry modules, ILocalizer localizer,
                 ImGui.TextUnformatted(localizer.Format("jobs.level", entry.Level));
             }
         }
-    }
-
-    private static void DrawIcon(uint iconId)
-    {
-        if (iconId == 0)
-        {
-            ImGui.Dummy(new System.Numerics.Vector2(22, 22));
-            return;
-        }
-
-        var texture = Svc.Textures.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrDefault();
-        if (texture == null)
-        {
-            ImGui.Dummy(new System.Numerics.Vector2(22, 22));
-            return;
-        }
-
-        ImGui.Image(texture.Handle, new System.Numerics.Vector2(22, 22));
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Hornwatch.Core;
 using Hornwatch.Core.Navigation;
 
 namespace Hornwatch.Modules.OccultCrescent;
@@ -35,18 +36,16 @@ public sealed class OccultTeleportNetwork(Func<uint> currentTerritory) : ITelepo
         _ => [],
     };
 
-    public ZoneTeleportPoint? NearestTo(Vector3 destination)
+    public ZoneTeleportPoint? NearestTo(Vector3 destination, Func<ZoneTeleportPoint, bool>? usable = null)
     {
         ZoneTeleportPoint? best = null;
         var bestDistance = float.MaxValue;
 
         foreach (var point in Points)
         {
-            var dx = point.Position.X - destination.X;
-            var dz = point.Position.Z - destination.Z;
-            var distance = (dx * dx) + (dz * dz);
+            var distance = point.Position.GroundDistanceTo(destination);
 
-            if (distance > point.MaxUsefulDistance * point.MaxUsefulDistance)
+            if (distance > point.MaxUsefulDistance || usable?.Invoke(point) == false)
             {
                 continue;
             }

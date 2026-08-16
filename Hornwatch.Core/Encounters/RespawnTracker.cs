@@ -17,6 +17,10 @@ public interface IRespawnStore
 
     uint CalibratedTerritoryId { get; set; }
 
+    SessionWitness? Witness { get; set; }
+
+    Dictionary<uint, Vector3> SeenAt { get; }
+
     void Save();
 }
 
@@ -27,6 +31,8 @@ public interface IRespawnRule
     IReadOnlyList<string> SlotsIn(uint territoryId);
 
     RespawnEntry? Next(TrackedEncounter ended, uint territoryId, DateTimeOffset endedAt);
+
+    Vector3? PositionFor(RespawnEntry entry, uint territoryId);
 }
 
 public sealed record RespawnPrediction(
@@ -46,10 +52,15 @@ public sealed record RespawnPrediction(
 
 public sealed class RespawnTracker(IRespawnStore store, IRespawnRule rule, Func<uint> currentTerritory)
 {
+    private static readonly TimeSpan CorroborationWindow = TimeSpan.FromSeconds(45);
 
     private readonly Dictionary<string, TrackedEncounter> previouslySeen = new();
 
     private readonly HashSet<string> occupied = new();
+
+    private DateTimeOffset? corroborateBy;
+
+    public bool IsUnproven => corroborateBy.HasValue;
 
     public void Observe(IReadOnlyList<TrackedEncounter> active)
     {
@@ -57,8 +68,12 @@ public sealed class RespawnTracker(IRespawnStore store, IRespawnRule rule, Func<
 
         if (territory != store.CalibratedTerritoryId)
         {
-            Invalidate(territory);
+            store.CalibratedTerritoryId = territory;
+            store.Save();
+            SuspendUntilRecognised(territory);
         }
+
+        ResolveCorroboration(active, territory);
 
         Dictionary<string, TrackedEncounter> present = [];
 
@@ -101,6 +116,100 @@ public sealed class RespawnTracker(IRespawnStore store, IRespawnRule rule, Func<
             previouslySeen[slot] = encounter;
             occupied.Add(slot);
         }
+
+        RenewWitness(active, territory);
+    }
+
+    private void ResolveCorroboration(IReadOnlyList<TrackedEncounter> active, uint territory)
+    {
+        if (corroborateBy is not { } deadline)
+        {
+            return;
+        }
+
+        if (store.Witness is { } witness)
+        {
+            foreach (var encounter in active)
+            {
+                if (witness.IsCorroboratedBy(encounter, territory))
+                {
+                    corroborateBy = null;
+                    return;
+                }
+            }
+        }
+
+        if (DateTimeOffset.UtcNow <= deadline)
+        {
+            return;
+        }
+
+        corroborateBy = null;
+        Forget();
+    }
+
+    private void RenewWitness(IReadOnlyList<TrackedEncounter> active, uint territory)
+    {
+        if (corroborateBy.HasValue)
+        {
+            return;
+        }
+
+        TrackedEncounter? oldest = null;
+
+        foreach (var encounter in active)
+        {
+            if (encounter.StartedAt is not { } started || encounter.SourceId == 0)
+            {
+                continue;
+            }
+
+            if (oldest?.StartedAt is not { } best || started < best)
+            {
+                oldest = encounter;
+            }
+        }
+
+        if (oldest == null || SessionWitness.Of(oldest, territory) is not { } witness || witness == store.Witness)
+        {
+            return;
+        }
+
+        store.Witness = witness;
+        store.Save();
+    }
+
+    public void SuspendUntilRecognised(uint territoryId)
+    {
+        Detach();
+
+        if (store.Entries.Count == 0 || store.Witness is not { } witness || witness.TerritoryId != territoryId)
+        {
+            corroborateBy = null;
+            Forget();
+            return;
+        }
+
+        corroborateBy = DateTimeOffset.UtcNow + CorroborationWindow;
+    }
+
+    public void Detach()
+    {
+        previouslySeen.Clear();
+        occupied.Clear();
+    }
+
+    private void Forget()
+    {
+        var hadAnything = store.Entries.Count > 0 || store.Witness != null;
+
+        store.Entries.Clear();
+        store.Witness = null;
+
+        if (hadAnything)
+        {
+            store.Save();
+        }
     }
 
     public IReadOnlyList<RespawnPrediction> Predictions
@@ -118,8 +227,12 @@ public sealed class RespawnTracker(IRespawnStore store, IRespawnRule rule, Func<
                     continue;
                 }
 
-                result.Add(store.Entries.TryGetValue(slot, out var entry) && entry.TerritoryId == territory
-                    ? new RespawnPrediction(entry.Name, entry.LabelKey, entry.Position, entry.ExpectedAt)
+                result.Add(!IsUnproven && store.Entries.TryGetValue(slot, out var entry) && entry.TerritoryId == territory
+                    ? new RespawnPrediction(
+                        entry.Name,
+                        entry.LabelKey,
+                        rule.PositionFor(entry, territory) ?? entry.Position,
+                        entry.ExpectedAt)
                     : RespawnPrediction.Unknown);
             }
 
@@ -152,11 +265,12 @@ public sealed class RespawnTracker(IRespawnStore store, IRespawnRule rule, Func<
 
     public void Invalidate(uint calibratedFor = 0)
     {
-        previouslySeen.Clear();
-        occupied.Clear();
+        Detach();
+        corroborateBy = null;
 
-        var hadEntries = store.Entries.Count > 0;
+        var hadEntries = store.Entries.Count > 0 || store.Witness != null;
         store.Entries.Clear();
+        store.Witness = null;
         store.CalibratedTerritoryId = calibratedFor;
 
         if (hadEntries || calibratedFor != 0)

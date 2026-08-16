@@ -18,6 +18,8 @@ namespace Hornwatch.Windows;
 
 public sealed class ConfigWindow : ThemedWindow, IDisposable
 {
+    private const float MountIconSize = 20f;
+
     private static readonly EncounterKind[] AlertKinds =
     [
         EncounterKind.CriticalEncounter,
@@ -25,42 +27,6 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         EncounterKind.Fate,
         EncounterKind.Raid,
     ];
-
-    private static readonly TreasureKind[] TreasureKinds =
-    [
-        TreasureKind.BronzeCoffer,
-        TreasureKind.SilverCoffer,
-        TreasureKind.PotNorth,
-        TreasureKind.PotSouth,
-        TreasureKind.SecondChance,
-        TreasureKind.Bunny,
-        TreasureKind.Survey,
-    ];
-
-    private static readonly TreasureRarity[] TreasureRarities =
-    [
-        TreasureRarity.Bronze,
-        TreasureRarity.Silver,
-        TreasureRarity.Gold,
-    ];
-
-    private static readonly Dictionary<TreasureRarity, uint> RarityIcons = new()
-    {
-        [TreasureRarity.Bronze] = 60356,
-        [TreasureRarity.Silver] = 60355,
-        [TreasureRarity.Gold] = 60354,
-    };
-
-    private static readonly Dictionary<TreasureKind, uint> TreasureIcons = new()
-    {
-        [TreasureKind.BronzeCoffer] = 60356,
-        [TreasureKind.SilverCoffer] = 60355,
-        [TreasureKind.PotNorth] = 60354,
-        [TreasureKind.PotSouth] = 60354,
-        [TreasureKind.SecondChance] = 61473,
-        [TreasureKind.Bunny] = 25207,
-        [TreasureKind.Survey] = 60357,
-    };
 
     private readonly Configuration configuration;
     private readonly ILocalizer localizer;
@@ -137,6 +103,17 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         ImGui.TextColored(Theme.Current.Accent, localizer.Get("config.appearance"));
         ImGui.Separator();
         DrawThemePicker();
+
+        ImGui.Spacing();
+
+        var potBar = configuration.ShowPotBarEntry;
+        if (ImGui.Checkbox(localizer.Get("config.showPotBar"), ref potBar))
+        {
+            configuration.ShowPotBarEntry = potBar;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("config.showPotBarHint"));
 
         if (!BuildFlavour.DeveloperToolsAvailable)
         {
@@ -308,7 +285,7 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         ImGui.TextColored(Theme.Current.Accent, localizer.Get("treasure.markers"));
         ImGui.Separator();
 
-        foreach (var kind in TreasureKinds)
+        foreach (var kind in TreasureVisuals.Order)
         {
             DrawTreasureMarkerToggle(territory, kind);
         }
@@ -359,7 +336,7 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
 
         ImGui.Spacing();
 
-        foreach (var rarity in TreasureRarities)
+        foreach (var rarity in TreasureVisuals.Rarities)
         {
             using var id = ImRaii.PushId($"alert{rarity}");
             var wanted = alerts.Wants(rarity);
@@ -385,22 +362,8 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         ImGui.TextWrapped(localizer.Get("treasure.forgetHint"));
     }
 
-    private void DrawRarityIcon(TreasureRarity rarity)
-    {
-        if (!RarityIcons.TryGetValue(rarity, out var icon))
-        {
-            return;
-        }
-
-        var texture = Svc.Textures.GetFromGameIcon(new GameIconLookup(icon)).GetWrapOrDefault();
-        if (texture == null)
-        {
-            return;
-        }
-
-        ImGui.Image(texture.Handle, new Vector2(ImGui.GetTextLineHeight() + 4f));
-        ImGui.SameLine();
-    }
+    private static void DrawRarityIcon(TreasureRarity rarity) =>
+        GameIcon.DrawBefore(TreasureVisuals.IconOf(rarity), ImGui.GetTextLineHeight() + 4f);
 
     private void DrawTreasureMarkerToggle(uint territory, TreasureKind kind)
     {
@@ -416,18 +379,8 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         }
     }
 
-    private void DrawTreasureIcon(TreasureKind kind)
-    {
-        if (TreasureIcons.TryGetValue(kind, out var icon))
-        {
-            var texture = Svc.Textures.GetFromGameIcon(new GameIconLookup(icon)).GetWrapOrDefault();
-            if (texture != null)
-            {
-                ImGui.Image(texture.Handle, new Vector2(ImGui.GetTextLineHeight() + 4f));
-                ImGui.SameLine();
-            }
-        }
-    }
+    private static void DrawTreasureIcon(TreasureKind kind) =>
+        GameIcon.DrawBefore(TreasureVisuals.IconOf(kind), ImGui.GetTextLineHeight() + 4f);
 
     private uint SelectedTerritory(IFieldModule module)
     {
@@ -551,15 +504,7 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
     {
         using var id = ImRaii.PushId((int)mount.Id);
 
-        if (mount.IconId != 0)
-        {
-            var texture = Svc.Textures.GetFromGameIcon(new GameIconLookup(mount.IconId)).GetWrapOrDefault();
-            if (texture != null)
-            {
-                ImGui.Image(texture.Handle, new Vector2(20, 20));
-                ImGui.SameLine();
-            }
-        }
+        GameIcon.DrawBefore(mount.IconId, MountIconSize);
 
         if (ImGui.Selectable(mount.Name, mount.Id == configuration.MountId))
         {

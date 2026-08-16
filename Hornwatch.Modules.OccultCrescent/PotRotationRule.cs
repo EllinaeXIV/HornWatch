@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Hornwatch.Core.Encounters;
 
 namespace Hornwatch.Modules.OccultCrescent;
@@ -55,6 +56,19 @@ public sealed class PotRotationRule(PotCatalog catalog) : IRespawnRule
             anchor + RespawnCycle,
             PotCatalog.LabelKeyFor(next.Side),
             catalog.PositionOf(next));
+    }
+
+    public Vector3? PositionFor(RespawnEntry entry, uint territoryId)
+    {
+        foreach (var pot in catalog.All)
+        {
+            if (pot.TerritoryId == territoryId && PotCatalog.LabelKeyFor(pot.Side) == entry.LabelKey)
+            {
+                return catalog.PositionOf(pot);
+            }
+        }
+
+        return null;
     }
 
     private bool HasPots(uint territoryId)

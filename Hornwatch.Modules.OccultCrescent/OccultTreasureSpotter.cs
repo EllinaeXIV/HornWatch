@@ -6,7 +6,13 @@ using LuminaTreasure = Lumina.Excel.Sheets.Treasure;
 
 namespace Hornwatch.Modules.OccultCrescent;
 
-public sealed class OccultTreasureSpotter(IObjectTable objects, IDataManager data, IPluginLog log) : ISpottedTreasureSource
+public sealed class OccultTreasureSpotter(
+    IObjectTable objects,
+    IDataManager data,
+    OccultMapLayers layers,
+    OccultDepths depths,
+    System.Func<uint> currentTerritory,
+    IPluginLog log) : ISpottedTreasureSource
 {
     private static readonly Dictionary<uint, TreasureRarity> RarityByModel = new()
     {
@@ -23,6 +29,9 @@ public sealed class OccultTreasureSpotter(IObjectTable objects, IDataManager dat
     {
         spotted.Clear();
 
+        var territory = currentTerritory();
+        var maps = layers.Of(territory);
+
         foreach (var candidate in objects)
         {
             if (candidate.ObjectKind != ObjectKind.Treasure)
@@ -30,7 +39,14 @@ public sealed class OccultTreasureSpotter(IObjectTable objects, IDataManager dat
                 continue;
             }
 
-            spotted.Add(new SpottedTreasure(candidate.GameObjectId, RarityOf(candidate.BaseId), candidate.Position));
+            var underground = depths.IsUnderground(territory, candidate.Position.Y);
+
+            spotted.Add(new SpottedTreasure(
+                candidate.GameObjectId,
+                RarityOf(candidate.BaseId),
+                candidate.Position,
+                underground ? maps.Underground!.Value : maps.Surface,
+                underground));
         }
     }
 

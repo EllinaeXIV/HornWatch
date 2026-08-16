@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
@@ -17,6 +18,8 @@ public sealed class LifestreamTeleporter : ITeleporter
     private readonly ICallGateSubscriber<string, bool> teleportToAethernetDestination;
     private readonly ICallGateSubscriber<bool> isBusy;
     private readonly ICallGateSubscriber<object> abort;
+
+    private readonly HashSet<uint> unknownToIdLookup = [];
 
     public LifestreamTeleporter(IDalamudPluginInterface pluginInterface, PluginPresence installed, IDataManager data, IPluginLog log)
     {
@@ -58,9 +61,16 @@ public sealed class LifestreamTeleporter : ITeleporter
             return false;
         }
 
-        if (Try(() => aethernetTeleportByPlaceNameId.InvokeFunc(placeNameId), "AethernetTeleportByPlaceNameId"))
+        if (!unknownToIdLookup.Contains(placeNameId))
         {
-            return true;
+            if (Try(() => aethernetTeleportByPlaceNameId.InvokeFunc(placeNameId), "AethernetTeleportByPlaceNameId"))
+            {
+                return true;
+            }
+
+            unknownToIdLookup.Add(placeNameId);
+            log.Information(
+                $"Lifestream does not know place name {placeNameId} by id; asking for it by name from now on.");
         }
 
         var name = PlaceName(placeNameId);
