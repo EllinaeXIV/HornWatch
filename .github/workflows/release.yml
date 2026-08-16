@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
 
 permissions:
   contents: write
@@ -31,7 +31,12 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart('v') + '.0'
+          $tag = [version]("${{ github.ref_name }}".TrimStart('v'))
+
+          $version = '{0}.{1}.{2}.{3}' -f `
+            $tag.Major, $tag.Minor, [Math]::Max($tag.Build, 0), [Math]::Max($tag.Revision, 0)
+
+          "${{ github.ref_name }} will be published as $version."
           "version=$version" >> $env:GITHUB_OUTPUT
 
       - name: Set assembly version
