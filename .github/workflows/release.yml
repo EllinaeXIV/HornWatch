@@ -94,6 +94,9 @@ jobs:
           $entry = $manifest | Where-Object { $_.InternalName -eq 'Hornwatch' }
           $entry.AssemblyVersion = "${{ steps.version.outputs.version }}"
 
+          $entry | Add-Member -NotePropertyName LastUpdate `
+            -NotePropertyValue ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Force
+
           $notes = (Get-Content "$env:RUNNER_TEMP\changelog.txt" -Raw).Trim()
           if ($notes) {
             $entry | Add-Member -NotePropertyName Changelog -NotePropertyValue $notes -Force
