@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -38,6 +39,20 @@ jobs:
 
           "${{ github.ref_name }} will be published as $version."
           "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Read the changelog from the tag
+        shell: pwsh
+        run: |
+          $notes = ((git tag -l --format='%(contents)' "${{ github.ref_name }}") -join "`n").Trim()
+
+          if ($notes) {
+            "${{ github.ref_name }} carries $($notes.Length) characters of changelog."
+          }
+          else {
+            "${{ github.ref_name }} has no annotation, so the changelog is left as it was."
+          }
+
+          Set-Content -Path "$env:RUNNER_TEMP\changelog.txt" -Value $notes -Encoding utf8
 
       - name: Set assembly version
         shell: pwsh
@@ -75,7 +90,15 @@ jobs:
         run: |
           $path = 'plugin-index/pluginmaster.json'
           $manifest = @(Get-Content $path -Raw | ConvertFrom-Json)
-          ($manifest | Where-Object { $_.InternalName -eq 'Hornwatch' }).AssemblyVersion = "${{ steps.version.outputs.version }}"
+
+          $entry = $manifest | Where-Object { $_.InternalName -eq 'Hornwatch' }
+          $entry.AssemblyVersion = "${{ steps.version.outputs.version }}"
+
+          $notes = (Get-Content "$env:RUNNER_TEMP\changelog.txt" -Raw).Trim()
+          if ($notes) {
+            $entry | Add-Member -NotePropertyName Changelog -NotePropertyValue $notes -Force
+          }
+
           $manifest | ConvertTo-Json -Depth 10 -AsArray | Set-Content $path
 
       - name: Commit pluginmaster.json

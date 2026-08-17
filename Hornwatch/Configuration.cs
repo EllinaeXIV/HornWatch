@@ -4,6 +4,7 @@ using System.Numerics;
 using Dalamud.Configuration;
 using Hornwatch.Core.Encounters;
 using Hornwatch.Core.Treasure;
+using Hornwatch.Theming;
 
 namespace Hornwatch;
 
@@ -26,7 +27,7 @@ public class Configuration : IPluginConfiguration
 
     public bool DeveloperMode { get; set; }
 
-    public string ThemeKey { get; set; } = "auto";
+    public string ThemeKey { get; set; } = ThemeManager.DefaultKey;
 
     public bool AutoTravelEnabled { get; set; }
 
@@ -43,6 +44,10 @@ public class Configuration : IPluginConfiguration
     public bool ShowRouteOverlay { get; set; }
 
     public bool ShowPotBarEntry { get; set; } = true;
+
+    public bool OpenOnZoneEntry { get; set; }
+
+    public bool KeepOpenOnEscape { get; set; }
 
     public Dictionary<uint, TreasureZoneSettings> TreasureByTerritory { get; set; } = new();
 

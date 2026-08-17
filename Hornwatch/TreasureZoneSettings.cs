@@ -12,6 +12,8 @@ public sealed class TreasureZoneSettings
 
     public bool ShowToolbar { get; set; } = true;
 
+    public bool ShowOnMinimap { get; set; }
+
     public TreasureAlertSettings Alerts { get; set; } = new();
 
     public TreasureRouteOptions Route { get; set; } = new();

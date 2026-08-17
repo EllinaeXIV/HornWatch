@@ -21,6 +21,8 @@ public sealed class MainWindow : ThemedWindow, IDisposable
     private readonly ILocalizer localizer;
     private readonly List<ITab> tabs;
 
+    private readonly Func<bool> keepOpenOnEscape;
+
     private string? pendingTab;
 
     public const string WatchTabKey = "tab.watch";
@@ -32,11 +34,13 @@ public sealed class MainWindow : ThemedWindow, IDisposable
         ITravelService travel,
         MapFlagger flagger,
         TreasureHunt hunt,
-        ThemeManager theme)
+        ThemeManager theme,
+        Func<bool> keepOpenOnEscape)
         : base($"{PluginMeta.Name}{PluginMeta.WindowId("main")}", theme)
     {
         this.modules = modules;
         this.localizer = localizer;
+        this.keepOpenOnEscape = keepOpenOnEscape;
 
         TitleBarButtons.Add(new TitleBarButton
         {
@@ -72,6 +76,8 @@ public sealed class MainWindow : ThemedWindow, IDisposable
         IsOpen = true;
         BringToFront();
     }
+
+    public override void PreOpenCheck() => RespectCloseHotkey = !keepOpenOnEscape();
 
     public override void Draw()
     {

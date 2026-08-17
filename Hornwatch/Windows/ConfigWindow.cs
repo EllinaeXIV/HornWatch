@@ -106,6 +106,26 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
 
         ImGui.Spacing();
 
+        var openOnEntry = configuration.OpenOnZoneEntry;
+        if (ImGui.Checkbox(localizer.Get("config.openOnEntry"), ref openOnEntry))
+        {
+            configuration.OpenOnZoneEntry = openOnEntry;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("config.openOnEntryHint"));
+
+        var keepOpen = configuration.KeepOpenOnEscape;
+        if (ImGui.Checkbox(localizer.Get("config.keepOpenOnEscape"), ref keepOpen))
+        {
+            configuration.KeepOpenOnEscape = keepOpen;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("config.keepOpenOnEscapeHint"));
+
+        ImGui.Spacing();
+
         var potBar = configuration.ShowPotBarEntry;
         if (ImGui.Checkbox(localizer.Get("config.showPotBar"), ref potBar))
         {
@@ -139,10 +159,10 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         var options = Theme.Options;
         var currentKey = configuration.ThemeKey;
 
-        var currentLabel = localizer.Get("config.themeFollowGame");
+        var currentLabel = string.Empty;
         foreach (var option in options)
         {
-            if (option.Key == currentKey && option.Key != ThemeManager.FollowGameKey)
+            if (option.Key == currentKey)
             {
                 currentLabel = option.DisplayName;
             }
@@ -155,11 +175,7 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
             {
                 foreach (var option in options)
                 {
-                    var label = option.Key == ThemeManager.FollowGameKey
-                        ? localizer.Get("config.themeFollowGame")
-                        : option.DisplayName;
-
-                    if (ImGui.Selectable(label, option.Key == currentKey))
+                    if (ImGui.Selectable(option.DisplayName, option.Key == currentKey))
                     {
                         configuration.ThemeKey = option.Key;
                         configuration.Save();
@@ -169,11 +185,6 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         }
 
         DrawSwatches();
-
-        if (currentKey == ThemeManager.FollowGameKey)
-        {
-            ImGui.TextWrapped(localizer.Get("config.themeFollowGameHint"));
-        }
     }
 
     private void DrawSwatches()
@@ -299,6 +310,15 @@ public sealed class ConfigWindow : ThemedWindow, IDisposable
         }
 
         ImGui.TextWrapped(localizer.Get("treasure.showOverlayHint"));
+
+        var minimap = configuration.TreasureFor(territory).ShowOnMinimap;
+        if (ImGui.Checkbox(localizer.Get("treasure.showMinimap"), ref minimap))
+        {
+            configuration.TreasureFor(territory).ShowOnMinimap = minimap;
+            configuration.Save();
+        }
+
+        ImGui.TextWrapped(localizer.Get("treasure.showMinimapHint"));
 
         ImGui.Spacing();
         ImGui.TextColored(Theme.Current.Accent, localizer.Get("treasure.alerts"));

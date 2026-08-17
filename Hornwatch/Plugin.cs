@@ -36,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PluginPresence installed;
     private readonly TreasureSpottedWatcher treasureWatcher;
     private readonly MapMarkers mapMarkers;
+    private readonly MinimapMarkers minimapMarkers;
     private readonly TreasureMapToolbar treasureToolbar;
     private readonly TreasureHunt treasureHunt;
     private readonly RouteOverlay routeOverlay;
@@ -151,6 +152,15 @@ public sealed class Plugin : IDalamudPlugin
             () => Configuration.ShowRouteOverlay && treasureHunt.State != HuntState.Idle,
             Svc.AddonLifecycle, Svc.Framework, Svc.Log);
 
+        minimapMarkers = new MinimapMarkers(
+            () => modules.Capability<ITreasureSource>(),
+            () => Svc.ClientState.TerritoryType,
+            () => Svc.ClientState.MapId,
+            () => Svc.Objects.LocalPlayer?.Position,
+            () => Configuration.TreasureFor(Svc.ClientState.TerritoryType).ShownMarkers,
+            () => Configuration.TreasureFor(Svc.ClientState.TerritoryType).ShowOnMinimap,
+            Svc.Log);
+
         treasureToolbar = new TreasureMapToolbar(
             Svc.Framework,
             Svc.GameGui,
@@ -166,9 +176,11 @@ public sealed class Plugin : IDalamudPlugin
             () => Configuration.ShowRouteOverlay,
             () => modules.Active != null);
 
-        var theme = new ThemeManager(Svc.Data, Svc.GameConfig, cache, Configuration);
+        var theme = new ThemeManager(Svc.Data, cache, Configuration);
 
-        mainWindow = new MainWindow(this, modules, localizer, Travel, flagger, treasureHunt, theme);
+        mainWindow = new MainWindow(
+            this, modules, localizer, Travel, flagger, treasureHunt, theme,
+            () => Configuration.KeepOpenOnEscape);
 
         potBar = new NextPotBarEntry(
             Svc.ServerBar, modules, localizer,
@@ -217,6 +229,7 @@ public sealed class Plugin : IDalamudPlugin
         treasureHunt.Stop();
         potBar.Dispose();
         treasureToolbar.Dispose();
+        minimapMarkers.Clear();
         mapMarkers.Dispose();
         KamiToolKitLibrary.Dispose();
 
@@ -239,6 +252,11 @@ public sealed class Plugin : IDalamudPlugin
 
             alertEngine.Reset();
             treasureWatcher.Reset();
+
+            if (Configuration.OpenOnZoneEntry && modules.Active != null)
+            {
+                mainWindow.IsOpen = true;
+            }
         }
 
         treasureToolbar.Sync();
@@ -255,6 +273,7 @@ public sealed class Plugin : IDalamudPlugin
         treasureHunt.Tick();
         treasureWatcher.Tick();
         mapMarkers.Tick();
+        minimapMarkers.Tick();
 
         var encounters = active.GetCapability<IEncounterSource>();
         if (encounters != null)

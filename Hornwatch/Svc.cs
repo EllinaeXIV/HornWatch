@@ -13,7 +13,6 @@ public sealed class Svc
     [PluginService] public static IObjectTable Objects { get; private set; } = null!;
     [PluginService] public static IFateTable Fates { get; private set; } = null!;
     [PluginService] public static ICondition Condition { get; private set; } = null!;
-    [PluginService] public static IGameConfig GameConfig { get; private set; } = null!;
     [PluginService] public static IDataManager Data { get; private set; } = null!;
     [PluginService] public static IFramework Framework { get; private set; } = null!;
     [PluginService] public static IChatGui Chat { get; private set; } = null!;

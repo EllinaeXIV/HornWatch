@@ -43,23 +43,6 @@ public static class GamePalettes
         return cache.GetOrCreate($"theme.{key}", () => Build(data, key) ?? Modern);
     }
 
-    public static string? FollowGameKey(IGameConfig gameConfig)
-    {
-        try
-        {
-            if (!gameConfig.System.TryGetUInt("ColorThemeType", out var raw))
-            {
-                return null;
-            }
-
-            return raw < GameThemes.Length ? GameThemes[raw].Key : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private static UiPalette? Build(IDataManager data, string key)
     {
         var sheet = data.GetExcelSheet<LuminaUIColor>();
