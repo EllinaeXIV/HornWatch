@@ -55,5 +55,5 @@ public sealed record TrackedEncounter
 
     public bool IsJoinable =>
         Kind is not (EncounterKind.CriticalEncounter or EncounterKind.Raid)
-        || Phase is EncounterPhase.Announced or EncounterPhase.Preparing;
+        || Phase is EncounterPhase.Announced;
 }

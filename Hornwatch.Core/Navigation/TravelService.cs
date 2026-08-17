@@ -79,7 +79,7 @@ public sealed class TravelCoordinator(
 
     private const float SameShardRange = 5f;
 
-    private const float SavingWorthARecall = 350f;
+    private const float SavingWorthARecall = 200f;
 
     private const float SavingWorthABoardingWalk = 150f;
 
@@ -132,6 +132,8 @@ public sealed class TravelCoordinator(
 
     private static readonly TimeSpan OnwardPatience = TimeSpan.FromMinutes(3);
 
+    private static readonly TimeSpan TargetLostGrace = TimeSpan.FromSeconds(4);
+
     private Vector3 finalDestination;
     private uint startedInTerritory;
     private DateTimeOffset phaseStartedAt;
@@ -158,6 +160,7 @@ public sealed class TravelCoordinator(
     private PlannedTrip? onward;
     private DateTimeOffset onwardExpiresAt;
     private bool recallSpent;
+    private DateTimeOffset? targetMissingSince;
 
     public TravelPhase Phase { get; private set; } = TravelPhase.Idle;
 
@@ -194,6 +197,7 @@ public sealed class TravelCoordinator(
         unstickAttempts = 0;
         mountedWalkToShard = null;
         recallSpent = false;
+        targetMissingSince = null;
         dismountOnApproach = dismountOnArrival;
 
         var wanted = Dropzone(destination, radius);
@@ -210,6 +214,31 @@ public sealed class TravelCoordinator(
         }
 
         BeginBoarding();
+    }
+
+    private bool TargetIsGone()
+    {
+        if (targetId is not { } id)
+        {
+            return false;
+        }
+
+        if (targetIsActive(id))
+        {
+            targetMissingSince = null;
+            return false;
+        }
+
+        targetMissingSince ??= DateTimeOffset.UtcNow;
+
+        if (DateTimeOffset.UtcNow - targetMissingSince < TargetLostGrace)
+        {
+            return false;
+        }
+
+        log.Information($"[travel] {id} has been off the encounter list for {TargetLostGrace.TotalSeconds:F0}s - giving up on it.");
+
+        return true;
     }
 
     private bool RedirectThroughTransport(PlannedTrip trip)
@@ -295,7 +324,7 @@ public sealed class TravelCoordinator(
             return;
         }
 
-        if (Phase != TravelPhase.Withdrawing && targetId is { } id && !targetIsActive(id))
+        if (Phase != TravelPhase.Withdrawing && TargetIsGone())
         {
             BeginWithdrawal();
             return;
@@ -304,7 +333,9 @@ public sealed class TravelCoordinator(
         switch (Phase)
         {
             case TravelPhase.Withdrawing:
-                DriveRecall(onArrival: () => Phase = TravelPhase.Idle, onFailure: () => Phase = TravelPhase.Idle);
+                DriveRecall(
+                    onArrival: () => EndWithdrawal("back at camp"),
+                    onFailure: () => EndWithdrawal("the recall never landed, stopping where we are"));
                 return;
 
             case TravelPhase.Recalling:
@@ -651,6 +682,12 @@ public sealed class TravelCoordinator(
 
         recallFrom = playerPosition();
         EnterPhase(TravelPhase.Withdrawing);
+    }
+
+    private void EndWithdrawal(string outcome)
+    {
+        log.Information($"[travel] withdrawal over - {outcome}.");
+        Phase = TravelPhase.Idle;
     }
 
     private void DriveRecall(Action onArrival, Action onFailure)
